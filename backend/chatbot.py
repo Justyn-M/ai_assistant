@@ -49,6 +49,33 @@ def initialize_tone():
         print("Invalid choice. Defaulting to friendly tone.")
         return "You are a friendly and helpful assistant."
 
+# ================== Main Logic Functions ===================
+
+# Summarize recent messages and determine tone dynamically
+def summarize_and_detect_tone(messages):
+    recent_messages = messages[-5:]  # Include the last few messages
+    tone_detection_prompt = (
+        "Summarize the following conversation in one or two sentences:\n\n"
+        f"{recent_messages}\n\n"
+        "Based on the summary, determine the most appropriate tone for the assistant. "
+        "Provide the summary and the tone as output in the following format:\n\n"
+        "Summary: <summary>\nTone: <tone>"
+    )
+    response = openai.ChatCompletion.create(
+        model="gpt-4",
+        messages=[
+            {"role": "system", "content": "You are a helpful assistant."},
+            {"role": "user", "content": tone_detection_prompt},
+        ],
+        max_tokens=100,
+        temperature=0.7,
+    )
+    response_text = response['choices'][0]['message']['content'].strip()
+    summary, tone = response_text.split("\n")
+    summary = summary.replace("Summary: ", "").strip()
+    tone = tone.replace("Tone: ", "").strip()
+    return summary, tone
+
 # Function for sending follow up messages
 def send_follow_up(messages):
     #Declaring the global variables
@@ -61,22 +88,35 @@ def send_follow_up(messages):
     sys.stdout.write("\r" + " " * 80 + "\r")
     sys.stdout.flush()
 
-# Follow up response
+     # Generate a dynamic follow-up response
+    summary, tone = summarize_and_detect_tone(messages)
+    follow_up_prompt = (
+        f"You are an assistant responding in a {tone.lower()} tone.\n\n"
+        "Based on the following conversation summary, craft a natural and engaging follow-up.\n\n"
+        "The current follow up is within the same chat instance. Ensure continuity and relevance.\n\n"
+        f"{summary}"
+    )
     response = openai.ChatCompletion.create(
-        model="gpt-3.5-turbo",
-        messages=messages + [{"role": "user", "content": "Follow up with something unique"}],
+        model="gpt-4",
+        messages=[
+            {"role": "system", "content": "You are a helpful assistant."},
+            {"role": "user", "content": follow_up_prompt},
+        ],
         max_tokens=100,
-        temperature=0.7
+        temperature=0.8,  # Encourage creativity
+        top_p=0.9,        # Focus on the most relevant responses
     )
     follow_up_response = response['choices'][0]['message']['content'].strip()
+
 
     # Ensure uniqueness upon each follow up
     while follow_up_response == last_assistant_response:
         response = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",
+            model="gpt-4",
             messages=messages + [{"role": "user", "content": "Generate a new follow-up"}],
             max_tokens=100,
-            temperature=0.7
+            temperature=0.8,
+            top_p=0.9,
         )
         follow_up_response = response['choices'][0]['message']['content'].strip()
 
@@ -161,7 +201,7 @@ def main():
         try:
             messages.append({"role": "user", "content": user_input})
             response = openai.ChatCompletion.create(
-                model="gpt-3.5-turbo",
+                model="gpt-4",
                 messages=messages,
                 max_tokens=150,
                 temperature=0.7
@@ -176,6 +216,10 @@ def main():
             print("Error: Invalid API key. Please check your settings.")
         except RateLimitError:
             print("Error: Too many requests. Please try again later.")
+        except openai.error.Timeout as e:
+            print("Error: The request timed out. Please try again.")
+        except openai.error.InvalidRequestError as e:
+            print(f"Error: {e}")
         except Exception as e:
             print(f"Unexpected Error: {e}")
 
