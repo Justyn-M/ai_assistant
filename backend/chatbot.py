@@ -1,8 +1,8 @@
 import openai
 import os
-import sys # For clearing the terminal line
-import time # Used for measuring how long before the AI will send a follow up message
-import msvcrt # Used for writing custom user input logic so that 'follow up' functionality can work properly
+import sys  # For clearing the terminal line
+import time  # For measuring inactivity before follow-ups
+import msvcrt  # For custom user input logic
 
 from dotenv import load_dotenv
 from openai.error import AuthenticationError, RateLimitError
@@ -16,11 +16,14 @@ openai.api_key = os.getenv("OPENAI_API_KEY")
 last_assistant_response = ""
 is_follow_up = False
 
-#Introduction message
+follow_up_count = 0  # How many follow-ups have been sent
+follow_up_intervals = [10, 30, 100, 200]  # Time intervals for follow-ups
+
+# Introduction message (correct)
 print("AI Chatbot (type 'exit' to quit)")
 
-# Ask the user for their preferred tone
 def initialize_tone():
+    # Correct: Function prompts user for a tone and returns the initial system message accordingly.
     print("Choose a tone for the assistant:")
     print("1: Friendly")
     print("2: Formal")
@@ -28,32 +31,30 @@ def initialize_tone():
     print("4: Yandere")
     tone_choice = input("Enter your choice (1, 2, 3, or 4): ")
 
-    # Setting tone based on user input
-    # Friendly and knowledgable tone
     if tone_choice == "1":
         return ("You are a friendly and helpful assistant. "
-                "You are also knowledgeable in many random facts.")
-    # Formal tone
+                "You are also knowledgeable in many random facts. "
+                "You are quite forgiving if the person you are talking to does not respond to you.")
     elif tone_choice == "2":
-        return "You are a formal and professional assistant."
-    #Funny tone
+        return ("You are a formal and professional assistant. "
+                "You remain patient and courteous even if the person you are assisting is unresponsive.")
     elif tone_choice == "3":
-        return "You are a humorous assistant who loves to crack jokes."
-    # Yandere tone
+        return ("You are a humorous assistant who loves to crack jokes. "
+                "You handle unresponsive users with lighthearted comments and good-natured humor.")
     elif tone_choice == "4":
         return ("You are a possessive and obsessive assistant with a dominant personality. "
                 "Your responses are affectionate, but they can have a slightly intense undertone, "
-                "like a yandere character.")
-    # Default tone
+                "like a yandere character. "
+                "You become increasingly insistent if ignored for too long.")
     else:
         print("Invalid choice. Defaulting to friendly tone.")
-        return "You are a friendly and helpful assistant."
+        return ("You are a friendly and helpful assistant. "
+                "You are also knowledgeable in many random facts. "
+                "You are quite forgiving if the person you are talking to does not respond to you.")
 
-# ================== Main Logic Functions ===================
-
-# Summarize recent messages and determine tone dynamically
 def summarize_and_detect_tone(messages):
-    recent_messages = messages[-5:]  # Include the last few messages
+    # Correct: Summarizes recent messages and determines tone.
+    recent_messages = messages[-5:]  # Last 5 messages
     tone_detection_prompt = (
         "Summarize the following conversation in one or two sentences:\n\n"
         f"{recent_messages}\n\n"
@@ -71,24 +72,29 @@ def summarize_and_detect_tone(messages):
         temperature=0.7,
     )
     response_text = response['choices'][0]['message']['content'].strip()
+    # Correct: We assume two lines, one with "Summary:" and one with "Tone:".
     summary, tone = response_text.split("\n")
     summary = summary.replace("Summary: ", "").strip()
     tone = tone.replace("Tone: ", "").strip()
     return summary, tone
 
-# Function for sending follow up messages
 def send_follow_up(messages):
-    #Declaring the global variables
+    # Correct: Uses globals for state.
     global is_follow_up
     global last_assistant_response
-    # Set to true
+    global follow_up_count
+
+    # If we've already sent all follow-ups, do nothing further.
+    if follow_up_count >= len(follow_up_intervals):
+        return
+
     is_follow_up = True
 
-    # Clear user input line everytime before a follow up is done.
+    # Clear user input line before a follow-up.
     sys.stdout.write("\r" + " " * 80 + "\r")
     sys.stdout.flush()
 
-     # Generate a dynamic follow-up response
+    # Generate a dynamic follow-up response.
     summary, tone = summarize_and_detect_tone(messages)
     follow_up_prompt = (
         f"You are an assistant responding in a {tone.lower()} tone.\n\n"
@@ -103,13 +109,12 @@ def send_follow_up(messages):
             {"role": "user", "content": follow_up_prompt},
         ],
         max_tokens=100,
-        temperature=0.8,  # Encourage creativity
-        top_p=0.9,        # Focus on the most relevant responses
+        temperature=0.8,
+        top_p=0.9,
     )
     follow_up_response = response['choices'][0]['message']['content'].strip()
 
-
-    # Ensure uniqueness upon each follow up
+    # Ensure uniqueness of follow-up.
     while follow_up_response == last_assistant_response:
         response = openai.ChatCompletion.create(
             model="gpt-4",
@@ -124,15 +129,20 @@ def send_follow_up(messages):
     messages.append({"role": "assistant", "content": follow_up_response})
     last_assistant_response = follow_up_response
 
-# Custom function for user inputs
-def get_user_input_with_timeout(inactivity_seconds):
-    """
-    Prints "You: " and waits for the user to press keys.
-    If user doesn't press any key within inactivity_seconds, returns None.
-    If user presses Enter, returns the line entered.
-    """
+    # Increment follow-up count since we just sent one.
+    follow_up_count += 1
 
-    # Write the user input
+def get_user_input_with_timeout():
+    # Correct: Determines current timeout based on follow_up_count.
+    global follow_up_count
+    global follow_up_intervals
+
+    if follow_up_count < len(follow_up_intervals):
+        current_timeout = follow_up_intervals[follow_up_count]
+    else:
+        # All follow-ups sent; we still use the last interval, though it won't trigger more follow-ups.
+        current_timeout = follow_up_intervals[-1]
+
     sys.stdout.write("You: ")
     sys.stdout.flush()
 
@@ -140,59 +150,61 @@ def get_user_input_with_timeout(inactivity_seconds):
     line = ""
 
     while True:
-        # Check if timeout passed without any input
-        if (time.time() - start_time) > inactivity_seconds and line == "":
+        # If no input within current_timeout and nothing typed, return None to trigger follow-up.
+        if (time.time() - start_time) > current_timeout and line == "":
             return None
 
         if msvcrt.kbhit():
             ch = msvcrt.getch()
-            # Handle special keys which might return sequences
             if ch in [b'\r', b'\n']:
                 # Enter pressed
-                print()  # move to next line
+                print()
                 return line.strip()
             elif ch == b'\x08':  # Backspace
                 if line:
                     line = line[:-1]
-                    # Move cursor back in console is tricky. Simplified approach:
-                    # Just re-print the line.
+                    # Reprint the line.
                     sys.stdout.write('\rYou: ' + line + ' ')
                     sys.stdout.flush()
-                    # Move cursor back one more
                     sys.stdout.write('\rYou: ' + line)
                     sys.stdout.flush()
-                # If you want a more accurate terminal handling,
-                # you'd need a more complex approach.
             else:
-                # Add typed character
                 char = ch.decode('utf-8', 'ignore')
                 if char.isprintable():
                     line += char
                     sys.stdout.write(char)
                     sys.stdout.flush()
-            # Reset start time since user is active
+            # Reset timer since user pressed a key.
             start_time = time.time()
 
-# Main function
 def main():
     global last_assistant_response
     global is_follow_up
+    global follow_up_count
 
-    print("AI Chatbot (type 'exit' to quit)")
+    # This print was at top-level as well, but it's okay to leave here.
+    # If you want to remove duplication, remove the top-level print.
+    # print("AI Chatbot (type 'exit' to quit)")
+
     tone = initialize_tone()
     messages = [{"role": "system", "content": tone}]
     last_assistant_response = ""
-    inactivity_seconds = 10
     is_follow_up = False
+    follow_up_count = 0  # Reset at start
 
-# Main chatbot logic
+    # Main chatbot logic
     while True:
-        user_input = get_user_input_with_timeout(inactivity_seconds)
+        user_input = get_user_input_with_timeout()
 
         if user_input is None:
-            # No user input before timeout and line is empty -> send follow-up
-            send_follow_up(messages)
+            # No user input within the interval
+            if follow_up_count < len(follow_up_intervals):
+                send_follow_up(messages)
+            # If we've exhausted follow-ups, just continue waiting
             continue
+
+        # User typed something, reset follow_up_count to 0
+        follow_up_count = 0
 
         if user_input.lower() == "exit":
             print("Goodbye! Have a great day!")
@@ -211,7 +223,7 @@ def main():
             messages.append({"role": "assistant", "content": assistant_response})
             last_assistant_response = assistant_response
 
-        #Error handling
+        # Error handling (correct)
         except AuthenticationError:
             print("Error: Invalid API key. Please check your settings.")
         except RateLimitError:
@@ -223,6 +235,5 @@ def main():
         except Exception as e:
             print(f"Unexpected Error: {e}")
 
-# Execute the program
 if __name__ == "__main__":
     main()
