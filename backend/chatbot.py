@@ -2,6 +2,7 @@ import openai
 from dotenv import load_dotenv
 import os
 
+# Load environment variables
 load_dotenv()
 openai_api_key = os.getenv("OPENAI_API_KEY")
 
@@ -17,11 +18,15 @@ while True:
 
     # try-except block to handle API errors
     try:
-        response = openai.Completion.create(
-            engine="gpt-3.5-turbo",
-            prompt=user_input,
-            max_tokens=150
+        response = openai.ChatCompletion.create(
+            model="gpt-3.5-turbo",  # Correct model parameter
+            messages=[
+                {"role": "system", "content": "You are a helpful assistant."},  # Optional system message
+                {"role": "user", "content": user_input}
+            ],
+            max_tokens=150,
+            temperature=0.7
         )
-        print(f"AI: {response.choices[0].text.strip()}")
+        print(f"AI: {response['choices'][0]['message']['content'].strip()}")
     except openai.error.OpenAIError as e:
         print(f"Error: {e}")

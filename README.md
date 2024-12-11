@@ -86,7 +86,7 @@ $RECYCLE.BIN/
 7) Add OPENAI_API_KEY=<Your openai key> to .env file
 8) Run pip install python-dotenv
 9) Set the python interpreter to the venv using command -> cntrl + shift + p
-10) Create a file in backend called chatbot.py and add:
+10) Create a file in backend called botcheck.py and add:
 import openai
 from dotenv import load_dotenv
 import os
@@ -107,5 +107,8 @@ except openai.error.OpenAIError as e:
     print(f"Error: {e}")
 
 # This will list all the available models that you can use according to your secret key
-11) 
+
+11) Next create a file called chatbot.py and write basic code that calls OpenAI's apis.
+
+12) If any issue arises, debug and fix your platform OpenAI accordingly.
 
