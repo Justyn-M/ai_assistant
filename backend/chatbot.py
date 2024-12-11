@@ -23,7 +23,7 @@ follow_up_intervals = [10, 30, 100, 200]  # Time intervals for follow-ups
 print("AI Chatbot (type 'exit' to quit)")
 
 def initialize_tone():
-    # Correct: Function prompts user for a tone and returns the initial system message accordingly.
+    # Function prompts user for a tone and returns the initial system message accordingly.
     print("Choose a tone for the assistant:")
     print("1: Friendly")
     print("2: Formal")
@@ -53,7 +53,7 @@ def initialize_tone():
                 "You are quite forgiving if the person you are talking to does not respond to you.")
 
 def summarize_and_detect_tone(messages):
-    # Correct: Summarizes recent messages and determines tone.
+    # Summarizes recent messages and determines tone.
     recent_messages = messages[-5:]  # Last 5 messages
     tone_detection_prompt = (
         "Summarize the following conversation in one or two sentences:\n\n"
@@ -72,19 +72,18 @@ def summarize_and_detect_tone(messages):
         temperature=0.7,
     )
     response_text = response['choices'][0]['message']['content'].strip()
-    # Correct: We assume two lines, one with "Summary:" and one with "Tone:".
+    # We assume two lines, one with "Summary:" and one with "Tone:".
     summary, tone = response_text.split("\n")
     summary = summary.replace("Summary: ", "").strip()
     tone = tone.replace("Tone: ", "").strip()
     return summary, tone
 
 def send_follow_up(messages):
-    # Correct: Uses globals for state.
     global is_follow_up
     global last_assistant_response
     global follow_up_count
 
-    # If we've already sent all follow-ups, do nothing further.
+    # If sent all follow-ups, do nothing further.
     if follow_up_count >= len(follow_up_intervals):
         return
 
@@ -94,14 +93,28 @@ def send_follow_up(messages):
     sys.stdout.write("\r" + " " * 80 + "\r")
     sys.stdout.flush()
 
-    # Generate a dynamic follow-up response.
+    # Determine frustration level based on follow_up_count
+    # If follow_up_count == 0, we are sending the first follow-up, so use frustration_levels[0].
+    # If follow_up_count == 1, second follow-up, frustration_levels[1], and so forth.
+    frustration_levels = [
+        "You are slightly irritated that the user is ignoring you, but try to remain polite.",
+        "You are now noticeably annoyed at the user's silence, and your tone reflects growing impatience.",
+        "You are frustrated by the user's continued silence. Your tone is direct, slightly confrontational, and insistent.",
+        "You are extremely frustrated by being ignored for so long, and your tone shows open annoyance."
+    ]
+    # Use min to ensure we don't go out of range if follow_up_count somehow exceeds the list
+    frustration_note = frustration_levels[min(follow_up_count, len(frustration_levels)-1)]
+
+    # Generate a dynamic follow-up response
     summary, tone = summarize_and_detect_tone(messages)
     follow_up_prompt = (
         f"You are an assistant responding in a {tone.lower()} tone.\n\n"
+        f"{frustration_note}\n\n"  # Add the frustration note
         "Based on the following conversation summary, craft a natural and engaging follow-up.\n\n"
-        "The current follow up is within the same chat instance. Ensure continuity and relevance.\n\n"
+        "Ensure continuity and relevance. If previously friendly, now show signs of frustration or annoyance.\n\n"
         f"{summary}"
     )
+
     response = openai.ChatCompletion.create(
         model="gpt-4",
         messages=[
@@ -129,11 +142,12 @@ def send_follow_up(messages):
     messages.append({"role": "assistant", "content": follow_up_response})
     last_assistant_response = follow_up_response
 
-    # Increment follow-up count since we just sent one.
+    # Increment follow-up count since we just sent one
     follow_up_count += 1
 
+
 def get_user_input_with_timeout():
-    # Correct: Determines current timeout based on follow_up_count.
+    # Determines current timeout based on follow_up_count.
     global follow_up_count
     global follow_up_intervals
 
@@ -177,15 +191,14 @@ def get_user_input_with_timeout():
             # Reset timer since user pressed a key.
             start_time = time.time()
 
+# Main function for chatbot login
 def main():
+    # declaring variables
     global last_assistant_response
     global is_follow_up
     global follow_up_count
 
-    # This print was at top-level as well, but it's okay to leave here.
-    # If you want to remove duplication, remove the top-level print.
-    # print("AI Chatbot (type 'exit' to quit)")
-
+    # Setting variables
     tone = initialize_tone()
     messages = [{"role": "system", "content": tone}]
     last_assistant_response = ""
@@ -200,7 +213,7 @@ def main():
             # No user input within the interval
             if follow_up_count < len(follow_up_intervals):
                 send_follow_up(messages)
-            # If we've exhausted follow-ups, just continue waiting
+            # If exhausted follow-ups, just continue waiting
             continue
 
         # User typed something, reset follow_up_count to 0
