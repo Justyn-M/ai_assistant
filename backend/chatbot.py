@@ -9,9 +9,37 @@ openai_api_key = os.getenv("OPENAI_API_KEY")
 # Set up OpenAI API Key
 openai.api_key = openai_api_key
 
-# First Message declared 
-messages = [{"role": "system", "content": "You are a helpful assistant."}]
+#Introduction message
 print("AI Chatbot (type 'exit' to quit)")
+
+# Ask the user for their preferred tone
+print("Choose a tone for the assistant:")
+print("1: Friendly")
+print("2: Formal")
+print("3: Humorous")
+print("4: Yandere")
+tone_choice = input("Enter your choice (1, 2, 3, or 4): ")
+
+# Set the tone based on user input
+if tone_choice == "1":
+    tone = "You are a friendly and helpful assistant."
+elif tone_choice == "2":
+    tone = "You are a formal and professional assistant."
+elif tone_choice == "3":
+    tone = "You are a humorous assistant who loves to crack jokes."
+elif tone_choice == "4":
+    tone = (
+        "You are a possessive and obsessive assistant who is devoted to the user. "
+        "Your responses are affectionate, but they can have a slightly intense undertone, "
+        "like a yandere character."
+    )
+else:
+    print("Invalid choice. Defaulting to friendly tone.")
+    tone = "You are a friendly and helpful assistant."
+
+
+# First Message declared 
+messages = [{"role": "system", "content": tone}]
 while True:
     user_input = input("You: ")
     if user_input.lower() == "exit":
