@@ -112,3 +112,5 @@ except openai.error.OpenAIError as e:
 
 12) If any issue arises, debug and fix your platform OpenAI accordingly.
 
+13) Once the basic chatbot is working. Continue to code additional functionalities as you wish.
+

@@ -1,6 +1,7 @@
 import openai
-from dotenv import load_dotenv
 import os
+from dotenv import load_dotenv
+from openai.error import AuthenticationError, RateLimitError
 
 # Load environment variables
 load_dotenv()
@@ -22,14 +23,15 @@ tone_choice = input("Enter your choice (1, 2, 3, or 4): ")
 
 # Set the tone based on user input
 if tone_choice == "1":
-    tone = "You are a friendly and helpful assistant."
+    tone = ("You are a friendly and helpful assistant."
+            "You are also knowledgable in many random facts.")
 elif tone_choice == "2":
     tone = "You are a formal and professional assistant."
 elif tone_choice == "3":
     tone = "You are a humorous assistant who loves to crack jokes."
 elif tone_choice == "4":
     tone = (
-        "You are a possessive and obsessive assistant who is devoted to the user. "
+        "You are a possessive and obsessive assistant with a dominant personality. "
         "Your responses are affectionate, but they can have a slightly intense undertone, "
         "like a yandere character."
     )
@@ -61,5 +63,9 @@ while True:
         messages.append({"role": "assistant", "content": assistant_response})
 
 
-    except openai.error.OpenAIError as e:
-        print(f"Error: {e}")
+    except AuthenticationError:
+        print("Error: Invalid API key. Please check your settings.")
+    except RateLimitError:
+        print("Error: Too many requests. Please try again later.")
+    except Exception as e:
+        print(f"Unexpected Error: {e}")
