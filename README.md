@@ -108,9 +108,18 @@ except openai.error.OpenAIError as e:
 
 # This will list all the available models that you can use according to your secret key
 
-11) Next create a file called chatbot.py and write basic code that calls OpenAI's apis.
+11) Next use the file file called chatbot.py or basic_chatbot.py and write basic code that calls OpenAI's apis.
+    basic_chatbot.py provides only the very base functionalities expected of a chatbot. That is to take input and respond to it.
+    basic_chatbot.py uses the input() function to ready from the terminal.
+
+    chatbot.py is a more advanced file featuring more functionalities such as responding with 'follow up' messages when the
+    user is afk. To do this. I have replaced using the input() function with msvcrt to create my own logic of reading inputs from the terminal.
+    The chatbot will only respond if there is nothing detected in the terminal. If there is even a single character in the reponse, the chatbot will not
+    interrupt with a 'follow up' message.
 
 12) If any issue arises, debug and fix your platform OpenAI accordingly.
 
 13) Once the basic chatbot is working. Continue to code additional functionalities as you wish.
+    If you wish to not use the fully code provided and only want the base functionalities. Check and run the file called 'basic_chatbot.py'
 
+    basic_chatbot.py uses input() to gain 
