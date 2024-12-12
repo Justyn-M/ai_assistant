@@ -66,6 +66,7 @@ chatbot-env/
 # Database
 *.sqlite3
 *.db
+*.sql
 
 # Cache and temporary files
 *.swp
