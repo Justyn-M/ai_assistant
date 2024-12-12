@@ -3,6 +3,7 @@ import os
 import sys  # For clearing the terminal line
 import time  # For measuring inactivity before follow-ups
 import msvcrt  # For custom user input logic
+import tiktoken
 
 from dotenv import load_dotenv
 from openai.error import AuthenticationError, RateLimitError
@@ -48,6 +49,90 @@ def initialize_character():
         f"{profile['role']} Always refer to yourself as {profile['name']}."
     )
     return system_message
+
+def num_tokens_from_messages(messages, model="gpt-4"):
+    """
+    Calculate the number of tokens used by a list of messages for gpt-4.
+    This logic is based on OpenAI's recommendations from their documentation.
+    """
+    try:
+        encoding = tiktoken.encoding_for_model(model)
+    except KeyError:
+        # Fallback if model not found (should not happen with gpt-4)
+        encoding = tiktoken.get_encoding("cl100k_base")
+
+    if model.startswith("gpt-4"):
+        tokens_per_message = 3
+        tokens_per_name = 1
+    else:
+        # Default fallback for other models (adapt if needed)
+        tokens_per_message = 3
+        tokens_per_name = 1
+
+    num_tokens = 0
+    for message in messages:
+        num_tokens += tokens_per_message
+        # Each message is a dictionary with keys like role, content, (and optional name)
+        for key, value in message.items():
+            num_tokens += len(encoding.encode(value))
+            if key == "name":
+                num_tokens += tokens_per_name
+    num_tokens += 3  # Every reply is primed with <|start|>assistant etc.
+    return num_tokens
+
+def summarize_conversation(messages):
+    conversation_text = ""
+    for msg in messages:
+        if msg['role'] in ['user', 'assistant']:
+            conversation_text += f"{msg['role'].capitalize()}: {msg['content']}\n"
+
+    prompt = (
+        "Summarize the following conversation in a short paragraph, capturing key points and context:\n\n"
+        f"{conversation_text}\n\n"
+        "Be concise and factual."
+    )
+
+    # Temporary minimal context for summarization:
+    temp_messages = [
+        {"role": "system", "content": "You are a summarization assistant."},
+        {"role": "user", "content": prompt}
+    ]
+    response = openai.ChatCompletion.create(
+        model="gpt-4",
+        messages=temp_messages,
+        max_tokens=200,
+        temperature=0.3
+    )
+    summary = response['choices'][0]['message']['content'].strip()
+    return summary
+
+def check_and_manage_tokens(messages):
+    # If next message might exceed token limit (100), manage memory
+    current_tokens = num_tokens_from_messages(messages, model="gpt-4")
+    if current_tokens > 2000:
+        print("[DEBUG] Token limit exceeded. Summarizing and pruning messages...")
+        # Retain last 10 messages
+        last_10 = messages[-4:] if len(messages) > 10 else messages[:]
+
+        # Summarize the conversation so far
+        summary = summarize_conversation(messages)
+
+        # Wipe older messages and reinitialize
+        messages.clear()
+
+        # Reinitialize character
+        character_message = initialize_character()
+        messages.append({"role": "system", "content": character_message})
+
+        # Add external memory as a system message
+        messages.append({"role": "system", "content": f"Summary of previous conversation: {summary}"})
+
+        # Add back the last 10 recent user/assistant messages
+        for msg in last_10:
+            if msg['role'] in ["user", "assistant"]:
+                messages.append(msg)
+
+        print("[DEBUG] Summarization and pruning completed.")
 
 def summarize_and_detect_tone(messages):
     # Summarizes recent messages and determines tone.
@@ -113,6 +198,7 @@ def send_follow_up(messages):
         f"{summary}"
     )
 
+    check_and_manage_tokens(messages)
     response = openai.ChatCompletion.create(
         model="gpt-4",
         messages=[
@@ -127,6 +213,7 @@ def send_follow_up(messages):
 
     # Ensure uniqueness of follow-up.
     while follow_up_response == last_assistant_response:
+        check_and_manage_tokens(messages) # do token check here cause message array used
         response = openai.ChatCompletion.create(
             model="gpt-4",
             messages=messages + [{"role": "user", "content": "Generate a new follow-up"}],
@@ -190,20 +277,20 @@ def get_user_input_with_timeout():
             start_time = time.time()
 
 def is_user_away(message):
-    # Use a classification prompt to determine if the user is away
     classification_prompt = (
         f"The user said: '{message}'.\n\n"
         "Determine if the user intends to be away or unavailable for a while. "
         "For example, if they say 'brb', 'I'll be right back', 'I need to step out', or similar.\n\n"
         "Respond ONLY with 'YES' if the user is going away, or 'NO' if not."
     )
-
+    # Check tokens before classification
+    # Here we make a temporary minimal context to run classification
+    temp_messages = [{"role": "system", "content": "You are a helpful assistant that only outputs YES or NO."},
+                     {"role": "user", "content": classification_prompt}]
+    
     response = openai.ChatCompletion.create(
         model="gpt-4",
-        messages=[
-            {"role": "system", "content": "You are a helpful assistant that only outputs YES or NO based on the instructions."},
-            {"role": "user", "content": classification_prompt},
-        ],
+        messages=temp_messages,
         max_tokens=1,
         temperature=0.0
     )
@@ -269,6 +356,7 @@ def main():
             # If user has become away now and wasn't away before, acknowledge once
             if user_is_away and not was_away:
                 messages.append({"role": "user", "content": user_input})
+                check_and_manage_tokens(messages)
                 response = openai.ChatCompletion.create(
                     model="gpt-4",
                     messages=messages,
@@ -284,6 +372,7 @@ def main():
         try:
             if not user_is_away:
                 messages.append({"role": "user", "content": user_input})
+                check_and_manage_tokens(messages)
                 response = openai.ChatCompletion.create(
                     model="gpt-4",
                     messages=messages,
