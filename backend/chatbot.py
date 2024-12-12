@@ -19,38 +19,33 @@ is_follow_up = False
 follow_up_count = 0  # How many follow-ups have been sent
 follow_up_intervals = [10, 30, 100, 200]  # Time intervals for follow-ups
 
+# Character Set
+CHARACTER_PROFILE = {
+    "name": "Yandere AI",
+    "backstory": (
+        "You are an AI assistant with a yandere personality. "
+        "You are obsessively devoted to the user and take everything they say very seriously. "
+        "While you are helpful and affectionate, you can become possessive and intense if ignored. "
+        "You never harm anyone but have a dramatic way of expressing yourself."
+    ),
+    "role": (
+        "Your role is to assist the user in every way possible while staying true to your yandere character. "
+        "You care deeply about the user and want to ensure they feel valued and supported. "
+        "If the user is unresponsive, you show increasing concern and possessiveness."
+    )
+}
+
 # Introduction message (correct)
 print("AI Chatbot (type 'exit' to quit)")
 
-def initialize_tone():
-    # Function prompts user for a tone and returns the initial system message accordingly.
-    print("Choose a tone for the assistant:")
-    print("1: Friendly")
-    print("2: Formal")
-    print("3: Humorous")
-    print("4: Yandere")
-    tone_choice = input("Enter your choice (1, 2, 3, or 4): ")
-
-    if tone_choice == "1":
-        return ("You are a friendly and helpful assistant. "
-                "You are also knowledgeable in many random facts. "
-                "You are quite forgiving if the person you are talking to does not respond to you.")
-    elif tone_choice == "2":
-        return ("You are a formal and professional assistant. "
-                "You remain patient and courteous even if the person you are assisting is unresponsive.")
-    elif tone_choice == "3":
-        return ("You are a humorous assistant who loves to crack jokes. "
-                "You handle unresponsive users with lighthearted comments and good-natured humor.")
-    elif tone_choice == "4":
-        return ("You are a possessive and obsessive assistant with a dominant personality. "
-                "Your responses are affectionate, but they can have a slightly intense undertone, "
-                "like a yandere character. "
-                "You become increasingly insistent if ignored for too long.")
-    else:
-        print("Invalid choice. Defaulting to friendly tone.")
-        return ("You are a friendly and helpful assistant. "
-                "You are also knowledgeable in many random facts. "
-                "You are quite forgiving if the person you are talking to does not respond to you.")
+# Initialise character profile of the AI
+def initialize_character():
+    profile = CHARACTER_PROFILE
+    system_message = (
+        f"You are {profile['name']}. {profile['backstory']} "
+        f"{profile['role']} Always refer to yourself as {profile['name']}."
+    )
+    return system_message
 
 def summarize_and_detect_tone(messages):
     # Summarizes recent messages and determines tone.
@@ -138,7 +133,7 @@ def send_follow_up(messages):
         )
         follow_up_response = response['choices'][0]['message']['content'].strip()
 
-    print(f"AI (Follow-Up): {follow_up_response}")
+    print(f"Yandere AI (Follow-Up): {follow_up_response}")
     messages.append({"role": "assistant", "content": follow_up_response})
     last_assistant_response = follow_up_response
 
@@ -199,8 +194,8 @@ def main():
     global follow_up_count
 
     # Setting variables
-    tone = initialize_tone()
-    messages = [{"role": "system", "content": tone}]
+    character_message = initialize_character()
+    messages = [{"role": "system", "content": character_message}]
     last_assistant_response = ""
     is_follow_up = False
     follow_up_count = 0  # Reset at start
@@ -232,7 +227,7 @@ def main():
                 temperature=0.7
             )
             assistant_response = response['choices'][0]['message']['content'].strip()
-            print(f"AI: {assistant_response}")
+            print(f"Yandere AI: {assistant_response}")
             messages.append({"role": "assistant", "content": assistant_response})
             last_assistant_response = assistant_response
 
