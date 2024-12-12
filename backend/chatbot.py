@@ -261,12 +261,12 @@ def get_user_input_with_timeout():
                 return line.strip()
             elif ch == b'\x08':  # Backspace
                 if line:
+                    # Move the cursor back one character, print a space to erase the character,
+                    # then move back again.
+                    sys.stdout.write('\b \b')
+                    sys.stdout.flush()
                     line = line[:-1]
-                    # Reprint the line.
-                    sys.stdout.write('\rYou: ' + line + ' ')
-                    sys.stdout.flush()
-                    sys.stdout.write('\rYou: ' + line)
-                    sys.stdout.flush()
+
             else:
                 char = ch.decode('utf-8', 'ignore')
                 if char.isprintable():
