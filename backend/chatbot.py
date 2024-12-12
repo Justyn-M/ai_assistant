@@ -19,6 +19,8 @@ is_follow_up = False
 follow_up_count = 0  # How many follow-ups have been sent
 follow_up_intervals = [10, 30, 100, 200]  # Time intervals for follow-ups
 
+user_is_away = False  # Indicates if the user is currently away
+
 # Character Set
 CHARACTER_PROFILE = {
     "name": "Yandere AI",
@@ -77,9 +79,10 @@ def send_follow_up(messages):
     global is_follow_up
     global last_assistant_response
     global follow_up_count
+    global user_is_away
 
     # If sent all follow-ups, do nothing further.
-    if follow_up_count >= len(follow_up_intervals):
+    if follow_up_count >= len(follow_up_intervals) or user_is_away:
         return
 
     is_follow_up = True
@@ -186,12 +189,44 @@ def get_user_input_with_timeout():
             # Reset timer since user pressed a key.
             start_time = time.time()
 
+def is_user_away(message):
+    # Use a classification prompt to determine if the user is away
+    classification_prompt = (
+        f"The user said: '{message}'.\n\n"
+        "Determine if the user intends to be away or unavailable for a while. "
+        "For example, if they say 'brb', 'I'll be right back', 'I need to step out', or similar.\n\n"
+        "Respond ONLY with 'YES' if the user is going away, or 'NO' if not."
+    )
+
+    response = openai.ChatCompletion.create(
+        model="gpt-4",
+        messages=[
+            {"role": "system", "content": "You are a helpful assistant that only outputs YES or NO based on the instructions."},
+            {"role": "user", "content": classification_prompt},
+        ],
+        max_tokens=1,
+        temperature=0.0
+    )
+
+    classification = response['choices'][0]['message']['content'].strip().upper()
+    return classification == "YES"
+
+# Method of input switches back to input() when user is detected to be away
+def away_mode_input():
+    # User is away, print prompt once and wait indefinitely until they return
+    sys.stdout.write("You: ")
+    sys.stdout.flush()
+    # Just use a standard blocking input() call
+    line = input().strip()
+    return line
+
 # Main function for chatbot login
 def main():
     # declaring variables
     global last_assistant_response
     global is_follow_up
     global follow_up_count
+    global user_is_away
 
     # Setting variables
     character_message = initialize_character()
@@ -199,37 +234,66 @@ def main():
     last_assistant_response = ""
     is_follow_up = False
     follow_up_count = 0  # Reset at start
+    user_is_away = False
 
     # Main chatbot logic
     while True:
-        user_input = get_user_input_with_timeout()
+        if user_is_away:
+            # User is away, wait for them to come back without timeouts or follow-ups
+            user_input = away_mode_input()
+            follow_up_count = 0
+            user_is_away = is_user_away(user_input)  # Check if user still indicates away
+            if user_input.lower() == "exit":
+                print("Goodbye! Have a great day!")
+                break
+        else:
+            # Normal mode with timeouts and follow-ups
+            user_input = get_user_input_with_timeout()
 
-        if user_input is None:
-            # No user input within the interval
-            if follow_up_count < len(follow_up_intervals):
-                send_follow_up(messages)
-            # If exhausted follow-ups, just continue waiting
-            continue
+            if user_input is None:
+                # No user input within the interval
+                if not user_is_away and follow_up_count < len(follow_up_intervals):
+                    send_follow_up(messages)
+                continue
 
-        # User typed something, reset follow_up_count to 0
-        follow_up_count = 0
+            follow_up_count = 0
 
-        if user_input.lower() == "exit":
-            print("Goodbye! Have a great day!")
-            break
+            if user_input.lower() == "exit":
+                print("Goodbye! Have a great day!")
+                break
+
+            # Check if user is away
+            was_away = user_is_away
+            user_is_away = is_user_away(user_input)
+
+            # If user has become away now and wasn't away before, acknowledge once
+            if user_is_away and not was_away:
+                messages.append({"role": "user", "content": user_input})
+                response = openai.ChatCompletion.create(
+                    model="gpt-4",
+                    messages=messages,
+                    max_tokens=150,
+                    temperature=0.7
+                )
+                assistant_response = response['choices'][0]['message']['content'].strip()
+                print(f"Yandere AI: {assistant_response}")
+                messages.append({"role": "assistant", "content": assistant_response})
+                last_assistant_response = assistant_response
+                continue
 
         try:
-            messages.append({"role": "user", "content": user_input})
-            response = openai.ChatCompletion.create(
-                model="gpt-4",
-                messages=messages,
-                max_tokens=150,
-                temperature=0.7
-            )
-            assistant_response = response['choices'][0]['message']['content'].strip()
-            print(f"Yandere AI: {assistant_response}")
-            messages.append({"role": "assistant", "content": assistant_response})
-            last_assistant_response = assistant_response
+            if not user_is_away:
+                messages.append({"role": "user", "content": user_input})
+                response = openai.ChatCompletion.create(
+                    model="gpt-4",
+                    messages=messages,
+                    max_tokens=150,
+                    temperature=0.7
+                )
+                assistant_response = response['choices'][0]['message']['content'].strip()
+                print(f"Yandere AI: {assistant_response}")
+                messages.append({"role": "assistant", "content": assistant_response})
+                last_assistant_response = assistant_response
 
         # Error handling (correct)
         except AuthenticationError:
