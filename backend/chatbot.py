@@ -107,12 +107,12 @@ def summarize_conversation(messages):
     return summary
 
 def check_and_manage_tokens(messages):
-    # If next message might exceed token limit (100), manage memory
+    # If next message might exceed token limit (2000), manage memory
     current_tokens = num_tokens_from_messages(messages, model="gpt-3.5-turbo")
-    if current_tokens > 1000:
+    if current_tokens > 2000:
         print("[DEBUG] Token limit exceeded. Summarizing and pruning messages...")
-        # Retain last 10 messages
-        last_10 = messages[-4:] if len(messages) > 10 else messages[:]
+        # Retain last 4 messages
+        last_4 = messages[-4:] if len(messages) > 10 else messages[:]
 
         # Summarize the conversation so far
         summary = summarize_conversation(messages)
@@ -128,7 +128,7 @@ def check_and_manage_tokens(messages):
         messages.append({"role": "system", "content": f"Summary of previous conversation: {summary}"})
 
         # Add back the last 10 recent user/assistant messages
-        for msg in last_10:
+        for msg in last_4:
             if msg['role'] in ["user", "assistant"]:
                 messages.append(msg)
 
