@@ -50,18 +50,18 @@ def initialize_character():
     )
     return system_message
 
-def num_tokens_from_messages(messages, model="gpt-4"):
+def num_tokens_from_messages(messages, model="gpt-3.5-turbo"):
     """
-    Calculate the number of tokens used by a list of messages for gpt-4.
+    Calculate the number of tokens used by a list of messages for gpt-3.5-turbo.
     This logic is based on OpenAI's recommendations from their documentation.
     """
     try:
         encoding = tiktoken.encoding_for_model(model)
     except KeyError:
-        # Fallback if model not found (should not happen with gpt-4)
+        # Fallback if model not found (should not happen with gpt-3.5-turbo)
         encoding = tiktoken.get_encoding("cl100k_base")
 
-    if model.startswith("gpt-4"):
+    if model.startswith("gpt-3.5-turbo"):
         tokens_per_message = 3
         tokens_per_name = 1
     else:
@@ -98,7 +98,7 @@ def summarize_conversation(messages):
         {"role": "user", "content": prompt}
     ]
     response = openai.ChatCompletion.create(
-        model="gpt-4",
+        model="gpt-3.5-turbo",
         messages=temp_messages,
         max_tokens=200,
         temperature=0.3
@@ -108,8 +108,8 @@ def summarize_conversation(messages):
 
 def check_and_manage_tokens(messages):
     # If next message might exceed token limit (100), manage memory
-    current_tokens = num_tokens_from_messages(messages, model="gpt-4")
-    if current_tokens > 2000:
+    current_tokens = num_tokens_from_messages(messages, model="gpt-3.5-turbo")
+    if current_tokens > 1000:
         print("[DEBUG] Token limit exceeded. Summarizing and pruning messages...")
         # Retain last 10 messages
         last_10 = messages[-4:] if len(messages) > 10 else messages[:]
@@ -135,29 +135,62 @@ def check_and_manage_tokens(messages):
         print("[DEBUG] Summarization and pruning completed.")
 
 def summarize_and_detect_tone(messages):
-    # Summarizes recent messages and determines tone.
-    recent_messages = messages[-5:]  # Last 5 messages
+    # Summarize the last few messages and determine a tone.
+    recent_messages = messages[-5:]  # Last 5 messages, adjust as needed
+
+    # Prompt the model to produce the output in a structured format:
+    # Summary on multiple lines, and Tone on a single line.
     tone_detection_prompt = (
-        "Summarize the following conversation in one or two sentences:\n\n"
+        "Summarize the following conversation in multiple sentences. "
+        "You can use as many lines as you need for the summary.\n\n"
         f"{recent_messages}\n\n"
-        "Based on the summary, determine the most appropriate tone for the assistant. "
-        "Provide the summary and the tone as output in the following format:\n\n"
-        "Summary: <summary>\nTone: <tone>"
+        "Then, on a new line starting with 'Tone:', provide a single short phrase that best describes the tone.\n\n"
+        "Your response MUST follow this exact format:\n"
+        "Summary:\n"
+        "<Write multiple lines for the summary here>\n"
+        "Tone: <short phrase describing tone>"
     )
+
     response = openai.ChatCompletion.create(
-        model="gpt-4",
+        model="gpt-3.5-turbo",
         messages=[
             {"role": "system", "content": "You are a helpful assistant."},
-            {"role": "user", "content": tone_detection_prompt},
+            {"role": "user", "content": tone_detection_prompt}
         ],
-        max_tokens=100,
-        temperature=0.7,
+        max_tokens=250,
+        temperature=0.7
     )
+
     response_text = response['choices'][0]['message']['content'].strip()
-    # We assume two lines, one with "Summary:" and one with "Tone:".
-    summary, tone = response_text.split("\n")
-    summary = summary.replace("Summary: ", "").strip()
-    tone = tone.replace("Tone: ", "").strip()
+    lines = response_text.split('\n')
+
+    summary_lines = []
+    tone = None
+    collecting_summary = False
+
+    for line in lines:
+        stripped_line = line.strip()
+
+        if stripped_line.startswith("Summary:"):
+            # After this line, we start collecting summary lines
+            collecting_summary = True
+            continue
+
+        elif stripped_line.startswith("Tone:"):
+            # This line indicates the tone line; stop collecting summary
+            tone = stripped_line.replace("Tone:", "").strip()
+            break
+
+        else:
+            if collecting_summary:
+                # All lines after "Summary:" until we hit "Tone:" are summary lines
+                summary_lines.append(stripped_line)
+
+    # Combine all summary lines into a single string.
+    # You can join with spaces or newlines as needed.
+    # Here, we'll just join with a space for simplicity:
+    summary = " ".join(summary_lines).strip()
+
     return summary, tone
 
 def send_follow_up(messages):
@@ -200,7 +233,7 @@ def send_follow_up(messages):
 
     check_and_manage_tokens(messages)
     response = openai.ChatCompletion.create(
-        model="gpt-4",
+        model="gpt-3.5-turbo",
         messages=[
             {"role": "system", "content": "You are a helpful assistant."},
             {"role": "user", "content": follow_up_prompt},
@@ -215,7 +248,7 @@ def send_follow_up(messages):
     while follow_up_response == last_assistant_response:
         check_and_manage_tokens(messages) # do token check here cause message array used
         response = openai.ChatCompletion.create(
-            model="gpt-4",
+            model="gpt-3.5-turbo",
             messages=messages + [{"role": "user", "content": "Generate a new follow-up"}],
             max_tokens=100,
             temperature=0.8,
@@ -289,7 +322,7 @@ def is_user_away(message):
                      {"role": "user", "content": classification_prompt}]
     
     response = openai.ChatCompletion.create(
-        model="gpt-4",
+        model="gpt-3.5-turbo",
         messages=temp_messages,
         max_tokens=1,
         temperature=0.0
@@ -358,7 +391,7 @@ def main():
                 messages.append({"role": "user", "content": user_input})
                 check_and_manage_tokens(messages)
                 response = openai.ChatCompletion.create(
-                    model="gpt-4",
+                    model="gpt-3.5-turbo",
                     messages=messages,
                     max_tokens=150,
                     temperature=0.7
@@ -374,7 +407,7 @@ def main():
                 messages.append({"role": "user", "content": user_input})
                 check_and_manage_tokens(messages)
                 response = openai.ChatCompletion.create(
-                    model="gpt-4",
+                    model="gpt-3.5-turbo",
                     messages=messages,
                     max_tokens=150,
                     temperature=0.7
