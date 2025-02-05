@@ -4,7 +4,7 @@ import sys  # For clearing the terminal line
 import time  # For measuring inactivity before follow-ups
 import msvcrt  # For custom user input logic
 import tiktoken
-import json  # For persistent memory
+import json #persistent memory
 
 from dotenv import load_dotenv
 from openai.error import AuthenticationError, RateLimitError
@@ -42,13 +42,11 @@ CHARACTER_PROFILE = {
     )
 }
 
-# Introduction message
+# Introduction message (correct)
 print("AI Chatbot (type 'exit' to quit)")
 
-# ------------------------- Persistent Memory Functions -------------------------
-
+# Load memory from JSON
 def load_memory():
-    """Load memory from a JSON file. If not present or error occurs, start with empty memory."""
     if os.path.exists(MEMORY_FILE):
         try:
             with open(MEMORY_FILE, "r", encoding="utf-8") as file:
@@ -57,121 +55,24 @@ def load_memory():
             print("[DEBUG] Error loading memory, starting fresh.")
     return {"Memory": []}
 
+# Save memory to JSON
 def save_memory(memory):
-    """Save the current memory dictionary to a JSON file."""
     try:
         with open(MEMORY_FILE, "w", encoding="utf-8") as file:
             json.dump(memory, file, indent=2)
     except Exception as e:
         print(f"[DEBUG] Error saving memory: {e}")
 
-def normalize_val(value):
-    """
-    Normalize a value for duplicate checking.
-    If the value is a string, trim and lowercase it.
-    If it's a list with one string element, return that normalized string.
-    For a list with multiple strings, return a tuple of normalized strings.
-    Otherwise, return the value as is.
-    """
-    if isinstance(value, str):
-        return value.strip().lower()
-    elif isinstance(value, list):
-        if len(value) == 1 and isinstance(value[0], str):
-            return value[0].strip().lower()
-        else:
-            return tuple(sorted(v.strip().lower() if isinstance(v, str) else v for v in value))
-    else:
-        return value
-
-def clean_memory(memory):
-    """
-    Remove memory entries with unknown values and remove duplicates based solely on normalization.
-    Known unknown values are: "not provided" and "unknown" (case insensitive).
-    """
-    unknown_values = {"not provided", "unknown"}
-    cleaned = []
-    seen = set()
-
-    for entry in memory.get("Memory", []):
-        # Process dictionary entries only.
-        if isinstance(entry, dict):
-            # Special handling if the entry uses keys "Key" and "Value"
-            if set(entry.keys()) == {"Key", "Value"}:
-                key = entry["Key"]
-                value = entry["Value"]
-                norm_key = key.strip().lower() if isinstance(key, str) else key
-                norm_value = normalize_val(value)
-                if isinstance(norm_value, str) and norm_value in unknown_values:
-                    continue
-                if (norm_key, norm_value) in seen:
-                    continue
-                seen.add((norm_key, norm_value))
-                cleaned.append({key: value})
-            else:
-                # For normal one-key dictionaries.
-                for key, value in entry.items():
-                    norm_key = key.strip().lower() if isinstance(key, str) else key
-                    norm_value = normalize_val(value)
-                    # Skip this key–value if the value is unknown.
-                    if isinstance(norm_value, str) and norm_value in unknown_values:
-                        continue
-                    if (norm_key, norm_value) in seen:
-                        continue
-                    seen.add((norm_key, norm_value))
-                    cleaned.append({key: value})
-    memory["Memory"] = cleaned
-    return memory
-
-def deduplicate_memory(memory):
-    """
-    Call ChatGPT to deduplicate and merge entries in the memory.
-    In particular, if multiple entries refer to the same concept (e.g., "User" and "Name"),
-    or if there are multiple entries for the same key (e.g., multiple "Intent" entries),
-    then keep only the most recent or most specific entry.
-    """
-    try:
-        prompt = (
-            "You are a memory deduplication assistant. Your task is to remove duplicate or outdated memory entries "
-            "from the provided JSON. Duplicate entries are those that refer to the same concept, such as 'User' and 'Name', or "
-            "multiple entries with the same key (e.g., multiple 'Intent' keys). If duplicates exist, keep the most recent or more specific entry. "
-            "For example, if one entry is {'User': 'Anonymous'} and another is {'Name': 'Justyn'}, assume that 'Name' is more specific "
-            "and retain only {'Name': 'Justyn'}. Also, if multiple entries for the same key exist (such as 'Intent'), keep only the entry that appears last in the list. \n\n"
-            "Here is the JSON memory input:\n\n"
-            f"{json.dumps(memory, indent=2)}\n\n"
-            "Return only the cleaned JSON in the exact same format (with key 'Memory' and an array of objects), and nothing else."
-        )
-        response = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",
-            messages=[
-                {"role": "system", "content": "You are a memory deduplication assistant."},
-                {"role": "user", "content": prompt}
-            ],
-            max_tokens=500,
-            temperature=0.0,
-        )
-        cleaned_text = response['choices'][0]['message']['content'].strip()
-        cleaned_memory = json.loads(cleaned_text)
-        return cleaned_memory
-    except Exception as e:
-        print(f"[DEBUG] Exception in deduplicate_memory: {e}")
-        return memory
-
+# Extract important facts from conversation
 def extract_memory(messages, memory):
-    """
-    Analyze the conversation (user messages only) and extract important details.
-    Uses GPT-3.5-turbo to output JSON which is then parsed and merged into the persistent memory.
-    After merging, it cleans and deduplicates the memory.
-    """
-    conversation_text = "\n".join(
-        [f"{msg['role'].capitalize()}: {msg['content']}" for msg in messages if msg['role'] == "user"]
-    )
+    conversation_text = "\n".join([f"{msg['role'].capitalize()}: {msg['content']}" for msg in messages if msg['role'] == "user"])
     
     memory_prompt = (
         "Analyze the following conversation and extract any important user details, such as name, preferences, interests, "
         "or anything else relevant to remembering about them.\n\n"
         f"{conversation_text}\n\n"
         "Return the information in a structured JSON format like this:\n"
-        '{ "Memory": [ { "Key": "Value" }, { "Key": "Value" } ] }'
+        "{ 'Memory': [ { 'Key': 'Value' }, { 'Key': 'Value' } ] }."
     )
 
     temp_messages = [
@@ -179,45 +80,39 @@ def extract_memory(messages, memory):
         {"role": "user", "content": memory_prompt}
     ]
     
+    response = openai.ChatCompletion.create(
+        model="gpt-3.5-turbo",
+        messages=temp_messages,
+        max_tokens=250,
+        temperature=0.3
+    )
+
     try:
-        response = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",
-            messages=temp_messages,
-            max_tokens=250,
-            temperature=0.3
-        )
-        extracted_text = response['choices'][0]['message']['content'].strip()
-        extracted_data = json.loads(extracted_text)
+        extracted_data = json.loads(response['choices'][0]['message']['content'].strip())
 
         if "Memory" in extracted_data:
             for item in extracted_data["Memory"]:
-                if item not in memory["Memory"]:
+                if item not in memory["Memory"]:  # Avoid duplicates
                     memory["Memory"].append(item)
-            # First clean out unknown values and obvious duplicates.
-            clean_memory(memory)
-            # Then ask ChatGPT to deduplicate and merge similar entries.
-            updated_memory = deduplicate_memory(memory)
-            memory["Memory"] = updated_memory.get("Memory", memory["Memory"])
+
             save_memory(memory)
     except json.JSONDecodeError:
         print("[DEBUG] Error parsing extracted memory.")
-    except Exception as e:
-        print(f"[DEBUG] Exception during memory extraction: {e}")
 
+# Retrieve memory to use in conversation
 def retrieve_memory(memory):
-    """Return a formatted string of all important user details stored in memory."""
     if not memory["Memory"]:
         return ""
     
-    memory_text = "Here are some important things I remember about you:\n"
+    memory_text = "Here are some important things to remember about the user:\n"
     for item in memory["Memory"]:
         for key, value in item.items():
             memory_text += f"- {key}: {value}\n"
     
     return memory_text.strip()
 
-# ------------------------- End of Memory Functions -------------------------
 
+# Initialise character profile of the AI
 def initialize_character():
     profile = CHARACTER_PROFILE
     system_message = (
@@ -234,23 +129,26 @@ def num_tokens_from_messages(messages, model="gpt-3.5-turbo"):
     try:
         encoding = tiktoken.encoding_for_model(model)
     except KeyError:
+        # Fallback if model not found (should not happen with gpt-3.5-turbo)
         encoding = tiktoken.get_encoding("cl100k_base")
 
     if model.startswith("gpt-3.5-turbo"):
         tokens_per_message = 3
         tokens_per_name = 1
     else:
+        # Default fallback for other models (adapt if needed)
         tokens_per_message = 3
         tokens_per_name = 1
 
     num_tokens = 0
     for message in messages:
         num_tokens += tokens_per_message
+        # Each message is a dictionary with keys like role, content, (and optional name)
         for key, value in message.items():
             num_tokens += len(encoding.encode(value))
             if key == "name":
                 num_tokens += tokens_per_name
-    num_tokens += 3  # Every reply is primed with special tokens.
+    num_tokens += 3  # Every reply is primed with <|start|>assistant etc.
     return num_tokens
 
 def summarize_conversation(messages):
@@ -265,6 +163,7 @@ def summarize_conversation(messages):
         "Be concise and factual."
     )
 
+    # Temporary minimal context for summarization:
     temp_messages = [
         {"role": "system", "content": "You are a summarization assistant."},
         {"role": "user", "content": prompt}
@@ -279,22 +178,39 @@ def summarize_conversation(messages):
     return summary
 
 def check_and_manage_tokens(messages):
+    # If next message might exceed token limit (2000), manage memory
     current_tokens = num_tokens_from_messages(messages, model="gpt-3.5-turbo")
     if current_tokens > 2000:
         print("[DEBUG] Token limit exceeded. Summarizing and pruning messages...")
+        # Retain last 4 messages
         last_4 = messages[-4:] if len(messages) > 10 else messages[:]
+
+        # Summarize the conversation so far
         summary = summarize_conversation(messages)
+
+        # Wipe older messages and reinitialize
         messages.clear()
+
+        # Reinitialize character
         character_message = initialize_character()
         messages.append({"role": "system", "content": character_message})
+
+        # Add external memory as a system message
         messages.append({"role": "system", "content": f"Summary of previous conversation: {summary}"})
+
+        # Add back the last 10 recent user/assistant messages
         for msg in last_4:
             if msg['role'] in ["user", "assistant"]:
                 messages.append(msg)
+
         print("[DEBUG] Summarization and pruning completed.")
 
 def summarize_and_detect_tone(messages):
-    recent_messages = messages[-5:]
+    # Summarize the last few messages and determine a tone.
+    recent_messages = messages[-5:]  # Last 5 messages, adjust as needed
+
+    # Prompt the model to produce the output in a structured format:
+    # Summary on multiple lines, and Tone on a single line.
     tone_detection_prompt = (
         "Summarize the following conversation in multiple sentences. "
         "You can use as many lines as you need for the summary.\n\n"
@@ -325,41 +241,62 @@ def summarize_and_detect_tone(messages):
 
     for line in lines:
         stripped_line = line.strip()
+
         if stripped_line.startswith("Summary:"):
+            # After this line, we start collecting summary lines
             collecting_summary = True
             continue
+
         elif stripped_line.startswith("Tone:"):
+            # This line indicates the tone line; stop collecting summary
             tone = stripped_line.replace("Tone:", "").strip()
             break
+
         else:
             if collecting_summary:
+                # All lines after "Summary:" until we hit "Tone:" are summary lines
                 summary_lines.append(stripped_line)
 
+    # Combine all summary lines into a single string.
+    # You can join with spaces or newlines as needed.
+    # Here, we'll just join with a space for simplicity:
     summary = " ".join(summary_lines).strip()
+
     return summary, tone
 
-def send_follow_up(messages, memory):
-    global is_follow_up, last_assistant_response, follow_up_count, user_is_away
+def send_follow_up(messages):
+    global is_follow_up
+    global last_assistant_response
+    global follow_up_count
+    global user_is_away
 
+    # If sent all follow-ups, do nothing further.
     if follow_up_count >= len(follow_up_intervals) or user_is_away:
         return
 
     is_follow_up = True
+
+    # Clear user input line before a follow-up.
     sys.stdout.write("\r" + " " * 80 + "\r")
     sys.stdout.flush()
 
+    # Determine frustration level based on follow_up_count
+    # If follow_up_count == 0, we are sending the first follow-up, so use frustration_levels[0].
+    # If follow_up_count == 1, second follow-up, frustration_levels[1], and so forth.
     frustration_levels = [
         "You are slightly irritated that the user is ignoring you, but try to remain polite.",
         "You are now noticeably annoyed at the user's silence, and your tone reflects growing impatience.",
         "You are frustrated by the user's continued silence. Your tone is direct, slightly confrontational, and insistent.",
         "You are extremely frustrated by being ignored for so long, and your tone shows open annoyance."
     ]
+    # Use min to ensure we don't go out of range if follow_up_count somehow exceeds the list
     frustration_note = frustration_levels[min(follow_up_count, len(frustration_levels)-1)]
 
+    # Generate a dynamic follow-up response
     summary, tone = summarize_and_detect_tone(messages)
     follow_up_prompt = (
         f"You are an assistant responding in a {tone.lower()} tone.\n\n"
-        f"{frustration_note}\n\n"
+        f"{frustration_note}\n\n"  # Add the frustration note
         "Based on the following conversation summary, craft a natural and engaging follow-up.\n\n"
         "Ensure continuity and relevance. If previously friendly, now show signs of frustration or annoyance.\n\n"
         f"{summary}"
@@ -378,8 +315,9 @@ def send_follow_up(messages, memory):
     )
     follow_up_response = response['choices'][0]['message']['content'].strip()
 
+    # Ensure uniqueness of follow-up.
     while follow_up_response == last_assistant_response:
-        check_and_manage_tokens(messages)
+        check_and_manage_tokens(messages) # do token check here cause message array used
         response = openai.ChatCompletion.create(
             model="gpt-3.5-turbo",
             messages=messages + [{"role": "user", "content": "Generate a new follow-up"}],
@@ -393,17 +331,19 @@ def send_follow_up(messages, memory):
     messages.append({"role": "assistant", "content": follow_up_response})
     last_assistant_response = follow_up_response
 
-    # Update persistent memory after sending the follow-up.
-    extract_memory(messages, memory)
-
+    # Increment follow-up count since we just sent one
     follow_up_count += 1
 
+
 def get_user_input_with_timeout():
-    global follow_up_count, follow_up_intervals
+    # Determines current timeout based on follow_up_count.
+    global follow_up_count
+    global follow_up_intervals
 
     if follow_up_count < len(follow_up_intervals):
         current_timeout = follow_up_intervals[follow_up_count]
     else:
+        # All follow-ups sent; we still use the last interval, though it won't trigger more follow-ups.
         current_timeout = follow_up_intervals[-1]
 
     sys.stdout.write("You: ")
@@ -413,25 +353,31 @@ def get_user_input_with_timeout():
     line = ""
 
     while True:
+        # If no input within current_timeout and nothing typed, return None to trigger follow-up.
         if (time.time() - start_time) > current_timeout and line == "":
             return None
 
         if msvcrt.kbhit():
             ch = msvcrt.getch()
             if ch in [b'\r', b'\n']:
+                # Enter pressed
                 print()
                 return line.strip()
             elif ch == b'\x08':  # Backspace
                 if line:
+                    # Move the cursor back one character, print a space to erase the character,
+                    # then move back again.
                     sys.stdout.write('\b \b')
                     sys.stdout.flush()
                     line = line[:-1]
+
             else:
                 char = ch.decode('utf-8', 'ignore')
                 if char.isprintable():
                     line += char
                     sys.stdout.write(char)
                     sys.stdout.flush()
+            # Reset timer since user pressed a key.
             start_time = time.time()
 
 def is_user_away(message):
@@ -441,10 +387,10 @@ def is_user_away(message):
         "For example, if they say 'brb', 'I'll be right back', 'I need to step out', or similar.\n\n"
         "Respond ONLY with 'YES' if the user is going away, or 'NO' if not."
     )
-    temp_messages = [
-        {"role": "system", "content": "You are a helpful assistant that only outputs YES or NO."},
-        {"role": "user", "content": classification_prompt}
-    ]
+    # Check tokens before classification
+    # Here we make a temporary minimal context to run classification
+    temp_messages = [{"role": "system", "content": "You are a helpful assistant that only outputs YES or NO."},
+                     {"role": "user", "content": classification_prompt}]
     
     response = openai.ChatCompletion.create(
         model="gpt-3.5-turbo",
@@ -452,48 +398,53 @@ def is_user_away(message):
         max_tokens=1,
         temperature=0.0
     )
+
     classification = response['choices'][0]['message']['content'].strip().upper()
     return classification == "YES"
 
+# Method of input switches back to input() when user is detected to be away
 def away_mode_input():
+    # User is away, print prompt once and wait indefinitely until they return
     sys.stdout.write("You: ")
     sys.stdout.flush()
+    # Just use a standard blocking input() call
     line = input().strip()
     return line
 
+# Main function for chatbot login
 def main():
-    global last_assistant_response, is_follow_up, follow_up_count, user_is_away
+    # declaring variables
+    global last_assistant_response
+    global is_follow_up
+    global follow_up_count
+    global user_is_away
 
-    # Load persistent memory
-    memory = load_memory()
-
+    # Setting variables
     character_message = initialize_character()
     messages = [{"role": "system", "content": character_message}]
-
-    # If there is any remembered info, add it to the system context.
-    remembered = retrieve_memory(memory)
-    if remembered:
-        messages.append({"role": "system", "content": f"Persistent Memory:\n{remembered}"})
-
     last_assistant_response = ""
     is_follow_up = False
-    follow_up_count = 0
+    follow_up_count = 0  # Reset at start
     user_is_away = False
 
+    # Main chatbot logic
     while True:
         if user_is_away:
+            # User is away, wait for them to come back without timeouts or follow-ups
             user_input = away_mode_input()
             follow_up_count = 0
-            user_is_away = is_user_away(user_input)
+            user_is_away = is_user_away(user_input)  # Check if user still indicates away
             if user_input.lower() == "exit":
                 print("Goodbye! Have a great day!")
                 break
         else:
+            # Normal mode with timeouts and follow-ups
             user_input = get_user_input_with_timeout()
 
             if user_input is None:
+                # No user input within the interval
                 if not user_is_away and follow_up_count < len(follow_up_intervals):
-                    send_follow_up(messages, memory)
+                    send_follow_up(messages)
                 continue
 
             follow_up_count = 0
@@ -502,14 +453,14 @@ def main():
                 print("Goodbye! Have a great day!")
                 break
 
+            # Check if user is away
             was_away = user_is_away
             user_is_away = is_user_away(user_input)
 
-            messages.append({"role": "user", "content": user_input})
-            extract_memory(messages, memory)
-            check_and_manage_tokens(messages)
-
+            # If user has become away now and wasn't away before, acknowledge once
             if user_is_away and not was_away:
+                messages.append({"role": "user", "content": user_input})
+                check_and_manage_tokens(messages)
                 response = openai.ChatCompletion.create(
                     model="gpt-3.5-turbo",
                     messages=messages,
@@ -520,11 +471,12 @@ def main():
                 print(f"Yandere AI: {assistant_response}")
                 messages.append({"role": "assistant", "content": assistant_response})
                 last_assistant_response = assistant_response
-                extract_memory(messages, memory)
                 continue
 
         try:
             if not user_is_away:
+                messages.append({"role": "user", "content": user_input})
+                check_and_manage_tokens(messages)
                 response = openai.ChatCompletion.create(
                     model="gpt-3.5-turbo",
                     messages=messages,
@@ -535,12 +487,13 @@ def main():
                 print(f"Yandere AI: {assistant_response}")
                 messages.append({"role": "assistant", "content": assistant_response})
                 last_assistant_response = assistant_response
-                extract_memory(messages, memory)
+
+        # Error handling (correct)
         except AuthenticationError:
             print("Error: Invalid API key. Please check your settings.")
         except RateLimitError:
             print("Error: Too many requests. Please try again later.")
-        except openai.error.Timeout:
+        except openai.error.Timeout as e:
             print("Error: The request timed out. Please try again.")
         except openai.error.InvalidRequestError as e:
             print(f"Error: {e}")
