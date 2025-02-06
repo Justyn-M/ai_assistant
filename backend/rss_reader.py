@@ -20,7 +20,7 @@ def get_rss_feed(url):
 
 # Functionality Testing
 if __name__ == '__main__':
-    print('Which news provider would you like to access? (SkyNews, 9news.com)')
+    print('Which news provider would you like to access? (SkyNews, Nasa, West Australian, RBA, Google News, US Federal Reserve)')
     usrinput = input().strip().lower() #convert to lowercase
     
     if usrinput == 'skynews':
@@ -51,14 +51,156 @@ if __name__ == '__main__':
             print("Published:", item['published'])
             print("-" * 40)
 
+    elif usrinput == 'nasa':
+        print('What news section would you like to read? (News, Recent Content, Image of the Day)')
+        newsoption = input().strip().lower()
 
-    elif usrinput == '9news.com':
-        test_url = "https://www.9news.com/feeds/syndication/rss/news"
+        if newsoption == 'news':
+            test_url = "https://www.nasa.gov/news-release/feed/"
+
+        elif newsoption == 'recent content':
+            test_url = "https://www.nasa.gov/feed/"
+
+        elif newsoption == 'image of the day':
+            test_url = "https://www.nasa.gov/feeds/iotd-feed/"
+            
+        else:
+            print("Invalid Input")
+        
         items = get_rss_feed(test_url)
         for item in items:
             print("Title:", item['title'])
             print("Link:", item['link'])
             print("Published:", item['published'])
             print("-" * 40)
+
+    elif usrinput == 'the west australia':
+        print('What news section would you like to read? (Recent, WA, national, international, business, politics)')
+        newsoption = input().strip().lower()
+
+        if newsoption == 'recent':
+            test_url = "https://thewest.com.au/rss"
+
+        elif newsoption == 'wa':
+            test_url = "https://thewest.com.au/news/wa/rss"
+
+        elif newsoption == 'national':
+            test_url = "https://thewest.com.au/news/australia/rss"
+            
+        elif newsoption == 'international':
+            test_url = "https://thewest.com.au/news/world/rss"
+
+        elif newsoption == 'business':
+            test_url = "https://thewest.com.au/business/rss"
+            
+        elif newsoption == 'politics':
+            test_url = "https://thewest.com.au/politics/rss"
+        else:
+            print("Invalid Input")
+
+        items = get_rss_feed(test_url)
+        for item in items:
+            print("Title:", item['title'])
+            print("Link:", item['link'])
+            print("Published:", item['published'])
+            print("-" * 40)
+
+    elif usrinput == 'rba':
+        print('What news section would you like to read? (Daily Exchange Rates, Media Releases, Bulletin, Stability Review, Monetary Policy Statement, politics)')
+        newsoption = input().strip().lower()
+
+        if newsoption == 'daily exchange rates':
+            test_url = "https://www.rba.gov.au/rss/rss-cb-exchange-rates.xml"
+
+        elif newsoption == 'media releases':
+            test_url = "https://www.rba.gov.au/rss/rss-cb-media-releases.xml"
+
+        elif newsoption == 'bulletin':
+            test_url = "https://www.rba.gov.au/rss/rss-cb-bulletin.xml"
+            
+        elif newsoption == 'Monetary Policy Statement':
+            test_url = "https://www.rba.gov.au/rss/rss-cb-smp.xml"
+
+        elif newsoption == 'business':
+            test_url = "https://thewest.com.au/business/rss"
+            
+        elif newsoption == 'politics':
+            test_url = "https://thewest.com.au/politics/rss"
+        else:
+            print("Invalid Input")
+
+        items = get_rss_feed(test_url)
+        for item in items:
+            print("Title:", item['title'])
+            print("Link:", item['link'])
+            print("Published:", item['published'])
+            print("-" * 40)
+
+    elif usrinput == 'google news':
+        print('What news section would you like to read? (General, australia, world, business, science, health)')
+        newsoption = input().strip().lower()
+
+        if newsoption == 'general':
+            test_url = "https://news.google.com/rss"
+
+        elif newsoption == 'technology':
+            test_url = "https://news.google.com/rss/search?q=technology&hl=en-US&gl=US&ceid=US:en"
+
+        elif newsoption == 'australia':
+            test_url = "https://news.google.com/rss?hl=en-AU&gl=AU&ceid=AU:en"
+            
+        elif newsoption == 'world':
+            test_url = "https://news.google.com/rss/topics/CAAqJggKIiBDQkFTRWdvSUwyMHZNRGx1YlY4U0FtVnVLQUFQAQ?hl=en-AU&gl=AU&ceid=AU:en"
+
+        elif newsoption == 'business':
+            test_url = "https://news.google.com/rss/search?q=business&hl=en-AU&gl=AU&ceid=AU:en"
+            
+        elif newsoption == 'science':
+            test_url = "https://news.google.com/rss/search?q=science&hl=en-AU&gl=AU&ceid=AU:en"
+        
+        elif newsoption == 'health':
+            test_url = "https://news.google.com/rss/search?q=health&hl=en-AU&gl=AU&ceid=AU:en"
+
+        else:
+            print("Invalid Input")
+
+        items = get_rss_feed(test_url)
+        for item in items:
+            print("Title:", item['title'])
+            print("Link:", item['link'])
+            print("Published:", item['published'])
+            print("-" * 40)
+
+    elif usrinput == 'us federal reserve':
+        print('What news section would you like to read? (Press Release, Regulatory Policies, Bulletin, Stability Review, Monetary Policy Statement, politics)')
+        newsoption = input().strip().lower()
+
+        if newsoption == 'press release':
+            test_url = "https://www.federalreserve.gov/feeds/press_all.xml"
+
+        elif newsoption == 'regulatory policies':
+            test_url = "https://www.federalreserve.gov/feeds/press_bcreg.xml"
+
+        elif newsoption == 'bulletin':
+            test_url = "https://www.rba.gov.au/rss/rss-cb-bulletin.xml"
+            
+        elif newsoption == 'Monetary Policy Statement':
+            test_url = "https://www.rba.gov.au/rss/rss-cb-smp.xml"
+
+        elif newsoption == 'business':
+            test_url = "https://thewest.com.au/business/rss"
+            
+        elif newsoption == 'politics':
+            test_url = "https://thewest.com.au/politics/rss"
+        else:
+            print("Invalid Input")
+
+        items = get_rss_feed(test_url)
+        for item in items:
+            print("Title:", item['title'])
+            print("Link:", item['link'])
+            print("Published:", item['published'])
+            print("-" * 40)
+
     else:
         print("Invalid Input")
