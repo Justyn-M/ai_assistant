@@ -5,15 +5,19 @@ import time  # For measuring inactivity before follow-ups
 import msvcrt  # For custom user input logic
 import tiktoken
 import json  # For persistent memory
+import re
 
 from dotenv import load_dotenv
 from openai.error import AuthenticationError, RateLimitError
+from exchange import get_exchange_rate
 
 # Load environment variables
 load_dotenv()
 
 # Setting up OpenAI API Key
 openai.api_key = os.getenv("OPENAI_API_KEY")
+# Replace with your own free tier API key from Alpha Vantage
+API_KEY = os.getenv("Alpha_Vantage_KEY")
 
 last_assistant_response = ""
 is_follow_up = False
@@ -357,7 +361,7 @@ def send_follow_up(messages, memory):
 
     summary, tone = summarize_and_detect_tone(messages)
     follow_up_prompt = (
-        f"You are an assistant responding in a {tone.lower()} tone.\n\n"
+        f"You are responding in a {tone.lower()} tone.\n\n"
         f"{frustration_note}\n\n"
         "Based on the following conversation summary, craft a natural and engaging follow-up.\n\n"
         "Ensure continuity and relevance. If previously friendly, now show signs of frustration or annoyance.\n\n"
@@ -460,6 +464,71 @@ def away_mode_input():
     line = input().strip()
     return line
 
+##### Currency Conversion Functions #####
+def conversion_detection(message):
+    pattern = r".*(convert|exchange).*(\d*\.?\d+)?\s*([A-Za-z]{3}).*(to|in).*?([A-Za-z]{3}).*"
+    match = re.search(pattern, message, re.IGNORECASE)
+    if match:
+        amount = match.group(2)
+        from_currency = match.group(3)
+        to_currency = match.group(5)
+        return {"amount": amount if amount else None,
+                "from": from_currency.upper(),
+                "to": to_currency.upper()}
+    return None
+
+# Use ChatGPT to turn raw exchange data into a human-like response.
+def humanize_currency_response(raw_data, details):
+    """
+    Uses GPT to transform raw exchange data into a friendly response.
+    """
+    rate = raw_data.get("5. Exchange Rate", "N/A")
+    last_refreshed = raw_data.get("6. Last Refreshed", "N/A")
+    amount_text = f"{details['amount']} " if details.get("amount") else ""
+    # Calculate the conversion result locally if an amount is provided and the rate is numeric.
+    conversion_result_text = ""
+    if details.get("amount") and rate != "N/A":
+        try:
+            conversion_amount = float(details["amount"]) * float(rate)
+            conversion_result_text = (
+                f"Calculation: {details['amount']} {details['from']} is approximately "
+                f"{conversion_amount:.2f} {details['to']}."
+            )
+        except Exception as e:
+            # If conversion fails, leave the conversion result text empty.
+            conversion_result_text = ""
+    
+    prompt = (
+        f"From the below information, rephrase the following currency conversion information in a friendly, human-like tone:\n\n"
+        f"Request: Convert {amount_text}{details['from']} to {details['to']}.\n"
+        f"Exchange Rate: 1 {details['from']} = {rate} {details['to']}.\n"
+        f"Data Last Refreshed: {last_refreshed}.\n"
+        f"{conversion_result_text}\n\n"
+    )
+    
+    response = openai.ChatCompletion.create(
+        model="gpt-3.5-turbo",
+        messages=[
+            {"role": "system", "content": "You are a helpful assistant."},
+            {"role": "user", "content": prompt}
+        ],
+        max_tokens=150,
+        temperature=0.7
+    )
+    return response['choices'][0]['message']['content'].strip()
+
+# Function to process the user message for currency conversion.
+def process_currency_conversion(user_message):
+    details = conversion_detection(user_message)
+    if details:
+        raw_data = get_exchange_rate(details["from"], details["to"])
+        if not raw_data:
+            return "I'm sorry, I couldn't retrieve the exchange rate at the moment."
+        # Pass the raw data and details to GPT to get a human-like response.
+        human_response = humanize_currency_response(raw_data, details)
+        return human_response
+    return None
+
 def main():
     global last_assistant_response, is_follow_up, follow_up_count, user_is_away
 
@@ -488,6 +557,7 @@ def main():
                 print("Goodbye! Have a great day!")
                 break
         else:
+## This part is where the 'chat logic' loop is
             user_input = get_user_input_with_timeout()
 
             if user_input is None:
@@ -501,13 +571,18 @@ def main():
                 print("Goodbye! Have a great day!")
                 break
 
+            # Check for currency conversion request first.
+            currency_response = process_currency_conversion(user_input)
+            if currency_response:
+                print("Yandere AI:", currency_response)
+                messages.append({"role": "assistant", "content": currency_response})
+                continue
+
             was_away = user_is_away
             user_is_away = is_user_away(user_input)
-
             messages.append({"role": "user", "content": user_input})
             extract_memory(messages, memory)
             check_and_manage_tokens(messages)
-
             if user_is_away and not was_away:
                 response = openai.ChatCompletion.create(
                     model="gpt-3.5-turbo",

@@ -357,7 +357,7 @@ def send_follow_up(messages, memory):
 
     summary, tone = summarize_and_detect_tone(messages)
     follow_up_prompt = (
-        f"You are an assistant responding in a {tone.lower()} tone.\n\n"
+        f"You are responding in a {tone.lower()} tone.\n\n"
         f"{frustration_note}\n\n"
         "Based on the following conversation summary, craft a natural and engaging follow-up.\n\n"
         "Ensure continuity and relevance. If previously friendly, now show signs of frustration or annoyance.\n\n"
