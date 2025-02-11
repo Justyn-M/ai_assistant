@@ -9,7 +9,7 @@ import re
 
 from dotenv import load_dotenv
 from openai.error import AuthenticationError, RateLimitError
-from exchange import get_exchange_rate
+from exchange import get_exchange_rate, format_exchange_info
 
 # Load environment variables
 load_dotenv()
@@ -466,68 +466,94 @@ def away_mode_input():
 
 ##### Currency Conversion Functions #####
 def conversion_detection(message):
-    pattern = r".*(convert|exchange).*(\d*\.?\d+)?\s*([A-Za-z]{3}).*(to|in).*?([A-Za-z]{3}).*"
+    pattern = r".*(?:convert|exchange)\s*\$?(\d*\.?\d+)?\s*([A-Za-z]{3}).*?(?:to|in)\s*([A-Za-z]{3}).*"
     match = re.search(pattern, message, re.IGNORECASE)
+    
     if match:
-        amount = match.group(2)
-        from_currency = match.group(3)
-        to_currency = match.group(5)
-        return {"amount": amount if amount else None,
-                "from": from_currency.upper(),
-                "to": to_currency.upper()}
+        amount = match.group(1)  # Captures the numerical value
+        from_currency = match.group(2)  # Captures the source currency
+        to_currency = match.group(3)  # Captures the target currency
+
+        return {
+            "amount": float(amount) if amount else None,  # Ensure float conversion
+            "from": from_currency.upper(),
+            "to": to_currency.upper()
+        }
+    
     return None
 
-# Use ChatGPT to turn raw exchange data into a human-like response.
-def humanize_currency_response(raw_data, details):
-    """
-    Uses GPT to transform raw exchange data into a friendly response.
-    """
-    rate = raw_data.get("5. Exchange Rate", "N/A")
-    last_refreshed = raw_data.get("6. Last Refreshed", "N/A")
-    amount_text = f"{details['amount']} " if details.get("amount") else ""
-    # Calculate the conversion result locally if an amount is provided and the rate is numeric.
-    conversion_result_text = ""
-    if details.get("amount") and rate != "N/A":
-        try:
-            conversion_amount = float(details["amount"]) * float(rate)
-            conversion_result_text = (
-                f"Calculation: {details['amount']} {details['from']} is approximately "
-                f"{conversion_amount:.2f} {details['to']}."
-            )
-        except Exception as e:
-            # If conversion fails, leave the conversion result text empty.
-            conversion_result_text = ""
-    
-    prompt = (
-        f"From the below information, rephrase the following currency conversion information in a friendly, human-like tone:\n\n"
-        f"Request: Convert {amount_text}{details['from']} to {details['to']}.\n"
-        f"Exchange Rate: 1 {details['from']} = {rate} {details['to']}.\n"
-        f"Data Last Refreshed: {last_refreshed}.\n"
-        f"{conversion_result_text}\n\n"
-    )
-    
-    response = openai.ChatCompletion.create(
-        model="gpt-3.5-turbo",
-        messages=[
-            {"role": "system", "content": "You are a helpful assistant."},
-            {"role": "user", "content": prompt}
-        ],
-        max_tokens=150,
-        temperature=0.7
-    )
-    return response['choices'][0]['message']['content'].strip()
 
-# Function to process the user message for currency conversion.
 def process_currency_conversion(user_message):
     details = conversion_detection(user_message)
+    
     if details:
+        
         raw_data = get_exchange_rate(details["from"], details["to"])
         if not raw_data:
             return "I'm sorry, I couldn't retrieve the exchange rate at the moment."
-        # Pass the raw data and details to GPT to get a human-like response.
-        human_response = humanize_currency_response(raw_data, details)
-        return human_response
+        
+        # Build exchange information string
+        exchange_info_str = format_exchange_info(raw_data, details["from"], details["to"])
+
+        # Pass data to GPT for response generation
+        gpt_response = humanize_currency_response(raw_data, details, exchange_info_str)
+        return gpt_response
+    
     return None
+
+
+def humanize_currency_response(raw_data, details, exchange_info_str):
+    """
+    Uses GPT to transform raw exchange data into a friendly Yandere AI response.
+    Incorporates both the local calculation result (if an amount is provided)
+    and the formatted exchange info string.
+    """
+    rate = raw_data.get("5. Exchange Rate", "N/A")
+    conversion_result_text = ""
+
+    # Compute local conversion if an amount is provided and rate is valid
+    if details["amount"] is not None and rate != "N/A":
+        try:
+            user_amount = float(details["amount"])  # Ensure float conversion
+            float_rate = float(rate)  # Ensure float conversion
+            conversion_amount = user_amount * float_rate
+            conversion_result_text = (
+                f"Calculation: {user_amount:.2f} {details['from']} is approximately "
+                f"{conversion_amount:.2f} {details['to']}."
+            )
+        except ValueError:
+            conversion_result_text = "(Error: Could not calculate conversion due to invalid data.)"
+
+    # Construct GPT prompt with correct details
+    prompt = (
+        "You are a helpful Yandere AI assistant.\n\n"
+        "The user wants a currency conversion. Please rephrase the following information "
+        "in a friendly, human-like tone, WITHOUT omitting any numeric detail.\n\n"
+        f"--- RAW EXCHANGE INFO ---\n{exchange_info_str}\n\n"
+        f"The user requested converting {details['amount'] if details['amount'] else 'an unknown amount'} "
+        f"{details['from']} to {details['to']}.\n\n"
+        f"From an accurate calculation, the conversion is {conversion_result_text}.\n\n"
+        "Show the raw exchange info & the accurate calculation info"
+    )
+
+    # Send request to OpenAI
+    response = openai.ChatCompletion.create(
+        model="gpt-3.5-turbo",
+        messages=[
+            {"role": "system", "content": "You are a helpful Yandere AI assistant."},
+            {"role": "user", "content": prompt}
+        ],
+        max_tokens=200,
+        temperature=0.7
+    )
+
+    final_text = response['choices'][0]['message']['content'].strip()
+
+    # Ensure the local calculation is included in the final response
+    if conversion_result_text and (conversion_result_text not in final_text):
+        final_text += f"\n\n(Additional Yandere Note: {conversion_result_text})"
+
+    return final_text
 
 def main():
     global last_assistant_response, is_follow_up, follow_up_count, user_is_away

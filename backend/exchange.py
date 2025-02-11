@@ -32,28 +32,20 @@ def get_exchange_rate(from_currency, to_currency):
         print("Error fetching exchange rate:", response.status_code)
         return {}
 
-def display_exchange_rate(exchange_data, from_currency, to_currency):
+def format_exchange_info(exchange_data, from_currency, to_currency):
     """
-    Displays a formatted summary of the exchange rate data.
-    
-    Args:
-        exchange_data (dict): The exchange rate information.
-        from_currency (str): The source currency code.
-        to_currency (str): The target currency code.
+    Builds a formatted string with the exchange data
+    (bid, ask, rate, etc.). Returns that string.
     """
-    if exchange_data:
-        print(f"\nExchange Rate from {from_currency} to {to_currency}:")
-        print(f"  Exchange Rate: {exchange_data.get('5. Exchange Rate', 'N/A')}")
-        print(f"  Last Refreshed: {exchange_data.get('6. Last Refreshed', 'N/A')}")
-        print(f"  Bid Price: {exchange_data.get('8. Bid Price', 'N/A')}")
-        print(f"  Ask Price: {exchange_data.get('9. Ask Price', 'N/A')}")
-    else:
-        print("No data available for the specified currency pair.")
+    if not exchange_data:
+        return "No data available for the specified currency pair."
 
-if __name__ == "__main__":
-    print("Currency Conversion")
-    from_curr = input("Enter source currency (e.g., USD): ").strip().upper()
-    to_curr = input("Enter target currency (e.g., EUR): ").strip().upper()
-    
-    exchange_data = get_exchange_rate(from_curr, to_curr)
-    display_exchange_rate(exchange_data, from_curr, to_curr)
+    rate = exchange_data.get('5. Exchange Rate', 'N/A')
+    last_refreshed = exchange_data.get('6. Last Refreshed', 'N/A')
+
+    lines = []
+    lines.append(f"Exchange Rate from {from_currency} to {to_currency}:")
+    lines.append(f"  Exchange Rate: {rate}")
+    lines.append(f"  Last Refreshed: {last_refreshed}")
+
+    return "\n".join(lines)
