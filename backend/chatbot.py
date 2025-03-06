@@ -6,6 +6,7 @@ import msvcrt  # For custom user input logic
 import tiktoken
 import json  # For persistent memory
 import re
+import feedparser
 
 from dotenv import load_dotenv
 from openai.error import AuthenticationError, RateLimitError
