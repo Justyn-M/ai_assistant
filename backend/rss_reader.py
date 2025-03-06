@@ -25,7 +25,7 @@ def rss_detector(message):
     """
     Extracts the news source and category from the given message using regex.
     """
-    pattern = r".*open\s+rss\s+([\w\s-]+)\s+([\w\s-]+).*"
+    pattern = r"open\s+rss\s+([\w\s-]+?)\s+(.+)"
     match = re.search(pattern, message, re.IGNORECASE)
 
     if match:
@@ -88,7 +88,7 @@ def get_rss_url(rss_source, category):
 # Function to fetch and display RSS feed
 def display_rss_feed(message):
     """
-    Extracts RSS details from the message, fetches the feed, and prints the news articles.
+    Extracts RSS details from the message, fetches the feed, and returns formatted news articles.
     """
     rss_source, category = rss_detector(message)
     
@@ -96,22 +96,21 @@ def display_rss_feed(message):
         news_url = get_rss_url(rss_source, category)
         
         if news_url:
-            print(f"Fetching news from {rss_source.title()} - {category.title()}...\n")
             items = get_rss_feed(news_url)
             
             if not items:
-                print("No news found in this category.")
-                return
+                return "No news found in this category."
             
-            for item in items[:5]:  # Limit to 5 news items for display
-                print(f"Title: {item['title']}")
-                print(f"Link: {item['link']}")
-                print(f"Published: {item['published']}")
-                print("-" * 40)
+            response = f"Fetching news from {rss_source.title()} - {category.title()}...\n\n"
+            for item in items[:5]:  # Limit to 5 news items
+                response += f"**{item['title']}**\n"
+                response += f"Published: {item['published']}\n"
+                response += f"[Read more]({item['link']})\n\n"
+            return response
         else:
-            print("Invalid news category or source.")
+            return "Invalid news category or source."
     else:
-        print("Could not understand your RSS request.")
+        return "Could not understand your RSS request."
 
 # Example usage
 display_rss_feed("open rss skynews world")

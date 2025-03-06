@@ -8,6 +8,10 @@ import json  # For persistent memory
 import re
 import feedparser
 
+# Importing Files
+import rss_reader
+
+
 from dotenv import load_dotenv
 from openai.error import AuthenticationError, RateLimitError
 from exchange import get_exchange_rate, format_exchange_info
@@ -603,6 +607,13 @@ def main():
             if currency_response:
                 print("Yandere AI:", currency_response)
                 messages.append({"role": "assistant", "content": currency_response})
+                continue
+
+            # Check if user is asking for RSS news
+            rss_response = rss_reader.display_rss_feed(user_input)
+            if rss_response and "Could not understand" not in rss_response:
+                print(f"Yandere AI (RSS News):\n{rss_response}")
+                messages.append({"role": "assistant", "content": rss_response})
                 continue
 
             was_away = user_is_away
