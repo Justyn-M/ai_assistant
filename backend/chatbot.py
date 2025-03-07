@@ -7,6 +7,7 @@ import tiktoken
 import json  # For persistent memory
 import re
 import feedparser
+import requests
 
 # Importing Files
 import rss_reader
@@ -487,6 +488,100 @@ def conversion_detection(message):
     
     return None
 
+##### Weather Functions #####
+
+def weather_detection(message):
+    pattern = r".*\b(?:current\s+weather|weather|temperature)\s+(?:in|for)?\s*([a-zA-Z\s]+)\b.*"
+    match = re.search(pattern, message, re.IGNORECASE)
+
+    if match:
+        city = match.group(1) # captures City name
+
+        prompt = (
+        f"Find the latitude and longitude of {city}. "
+        "Do not use cardinal directions. Give the coordinates in + or - <coordinates>"
+        "Return only a JSON object formatted as: {\"latitude\": value, \"longitude\": value}"
+    )
+        
+        response = openai.ChatCompletion.create(
+            model="gpt-3.5-turbo",
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=50,
+            temperature=0.3
+        )
+
+         # Extract the response content
+        response_text = response['choices'][0]['message']['content'].strip()
+
+        # Safely parse JSON response
+        coordinates = json.loads(response_text)
+
+        if "latitude" in coordinates and "longitude" in coordinates:
+            return {
+                "city": city,
+                "latitude": coordinates["latitude"],
+                "longitude": coordinates["longitude"]
+            }
+        else:
+            print("I'm sorry, I am having trouble retriving the coordinates at the moment.")
+            return None
+        
+    return None
+        
+def get_weather(user_message):
+
+    details = weather_detection(user_message)
+
+    if not details:
+        return None
+
+    if details:
+
+        city = details["city"]
+        latitude = details["latitude"]
+        longitude = details["longitude"]
+
+        # Call open metro API
+        url = f"https://api.open-meteo.com/v1/forecast?latitude={latitude}&longitude={longitude}&current=temperature_2m,wind_speed_10m&timezone=auto"
+
+        response = requests.get(url)
+        weather_data = response.json()
+
+        # Validate "current" key before extracting temperature
+        if "current" not in weather_data or "temperature_2m" not in weather_data["current"]:
+            return "Sorry, I couldn't fetch the weather data right now."
+        
+        # Extract weather details
+        temperature = weather_data["current"].get("temperature_2m", "N/A")
+        time = weather_data["current"].get("time", "N/A")
+        wind_speed = weather_data["current"].get("wind_speed_10m", "N/A")
+        
+        prompt = (
+                f"You are a helpful Yandere Assistant.\n\n"
+                f"The user wants to know the current weather based on:\n"
+                f"- Time: {time}\n"
+                f"- Temperature: {temperature}°C\n"
+                f"- Wind Speed: {wind_speed}km/h\n"
+                f"For the city of {city}.\n"
+                f"Describe the weather in a playful and affectionate yandere tone."
+            )
+
+        # Send request to OpenAI
+        response = openai.ChatCompletion.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {"role": "system", "content": "You are a helpful Yandere AI assistant."},
+                {"role": "user", "content": prompt}
+            ],
+            max_tokens=200,
+            temperature=0.7
+        )
+
+        final_text = response['choices'][0]['message']['content'].strip()
+
+    return final_text
+
+    
 
 def process_currency_conversion(user_message):
     details = conversion_detection(user_message)
@@ -614,6 +709,12 @@ def main():
             if rss_response and "Could not understand" not in rss_response:
                 print(f"Yandere AI (RSS News):\n{rss_response}")
                 messages.append({"role": "assistant", "content": rss_response})
+                continue
+
+            weather_response = get_weather(user_input)
+            if weather_response:
+                print("Yandere AI:", weather_response)
+                messages.append({"role": "assistant", "content": weather_response})
                 continue
 
             was_away = user_is_away
