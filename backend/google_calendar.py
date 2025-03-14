@@ -248,7 +248,7 @@ def test_google_calendar_functions():
 if __name__ == "__main__":
     # 6️⃣ Add an event with custom reminders & color
     print("\n✅ Testing: Adding an event with multiple reminders and custom color")
-    print(add_event("Dentist Appointment", "2025-03-18", "09:00", 
+    print(add_event("Dentist Appointment", "2025-03-15", "09:00", 
                     reminders=[
                         {'method': 'popup', 'minutes': 15},  # 15 min pop-up
                         {'method': 'email', 'minutes': 120}  # 2 hours email
