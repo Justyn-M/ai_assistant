@@ -16,6 +16,7 @@ import rss_reader
 from dotenv import load_dotenv
 from openai.error import AuthenticationError, RateLimitError
 from exchange import get_exchange_rate, format_exchange_info
+from google_calendar import *
 
 # Load environment variables
 load_dotenv()
@@ -655,6 +656,28 @@ def humanize_currency_response(raw_data, details, exchange_info_str):
 
     return final_text
 
+##### Calendar Functions #####
+def detect_calendar_intent(user_input):
+    """
+    Determines if the user is making a calendar-related request.
+    Returns a dictionary with detected intent and extracted details.
+    """
+    patterns = {
+        "add_event": r"(?:schedule|add|create|set)\s+(?:an|a)?\s*(event|meeting|appointment|reminder)?\s*(?:called|named|titled)?\s*(.*?)\s+on\s+(\d{4}-\d{2}-\d{2})\s+at\s+(\d{1,2}:\d{2})",
+        "delete_event": r"(?:delete|remove|cancel)\s+(?:an|a)?\s*(event|meeting|appointment|reminder)?\s*(?:called|named|titled)?\s*(.*?)\s*(?:on\s+(\d{4}-\d{2}-\d{2}))?",
+        "update_event": r"(?:update|modify|change)\s+(?:an|a)?\s*(event|meeting|appointment|reminder)?\s*(?:called|named|titled)?\s*(.*?)\s*(?:to\s+(\d{4}-\d{2}-\d{2})\s+at\s+(\d{1,2}:\d{2}))?",
+        "get_events": r"(?:list|show|fetch|get)\s+(?:my)?\s*(events|appointments|schedule|calendar)\s*(?:on\s+(\d{4}-\d{2}-\d{2}))?",
+        "free_time": r"(?:when am I free|find free time|check availability|available slots)"
+    }
+
+    for intent, pattern in patterns.items():
+        match = re.search(pattern, user_input, re.IGNORECASE)
+        if match:
+            return {"intent": intent, "details": match.groups()}
+
+    return None  # No match found
+
+
 def main():
     global last_assistant_response, is_follow_up, follow_up_count, user_is_away
 
@@ -703,6 +726,37 @@ def main():
                 print("Yandere AI:", currency_response)
                 messages.append({"role": "assistant", "content": currency_response})
                 continue
+            
+            # 📅 Handle Calendar Requests
+            calendar_intent = detect_calendar_intent(user_input)
+            if calendar_intent:
+                intent = calendar_intent["intent"]
+                details = calendar_intent["details"]
+
+                if intent == "add_event":
+                    _, summary, date, time = details
+                    response = add_event(summary, date, time)
+                
+                elif intent == "delete_event":
+                    _, summary, date = details
+                    response = delete_event(summary, date)
+                
+                elif intent == "update_event":
+                    _, summary, new_date, new_time = details
+                    response = update_event(summary, new_date, new_time)
+                
+                elif intent == "get_events":
+                    _, date = details
+                    response = get_events_by_date(date) if date else get_upcoming_events()
+                
+                elif intent == "free_time":
+                    response = check_free_time()
+                
+                print("Yandere AI:", response)
+                messages.append({"role": "assistant", "content": response})
+                continue  # Skip normal AI response
+
+
 
             # Check if user is asking for RSS news
             rss_response = rss_reader.display_rss_feed(user_input)
