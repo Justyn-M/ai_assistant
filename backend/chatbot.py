@@ -515,7 +515,7 @@ def detect_weather_intent(message):
            #  print(f"[DEBUG] Weather intent detected via dependency parsing: {token.text}")  # Debugging
             return True
 
-    print("[DEBUG] No weather intent detected.")  # Debugging
+    #print("[DEBUG] No weather intent detected.")  # Debugging
     return False
 
 def weather_detection(message):
@@ -606,13 +606,13 @@ def get_weather(user_message):
         wind_speed = weather_data["current"].get("wind_speed_10m", "N/A")
         
         prompt = (
-                f"You are a helpful Yandere Assistant.\n\n"
+                f"You are a helpful Yandere AI Assistant.\n\n"
                 f"The user wants to know the current weather based on:\n"
                 f"- Time: {time}\n"
                 f"- Temperature: {temperature}°C\n"
                 f"- Wind Speed: {wind_speed}km/h\n"
                 f"For the city of {city}.\n"
-                f"Describe the weather in a playful and affectionate yandere tone."
+                f"Describe the weather in a slightly crazy and affectionate yandere tone."
             )
 
         # Send request to OpenAI
