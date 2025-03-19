@@ -9,9 +9,12 @@ import re
 import feedparser
 import requests
 
+# SpaCy imports
+import spacy
+import dateparser
+
 # Importing Files
 import rss_reader
-
 
 from dotenv import load_dotenv
 from openai.error import AuthenticationError, RateLimitError
@@ -20,6 +23,9 @@ from google_calendar import *
 
 # Load environment variables
 load_dotenv()
+
+# Load SpaCy
+nlp = spacy.load("en_core_web_sm")
 
 # Setting up OpenAI API Key
 openai.api_key = os.getenv("OPENAI_API_KEY")
@@ -490,20 +496,63 @@ def conversion_detection(message):
     return None
 
 ##### Weather Functions #####
+def detect_weather_intent(message):
+    """
+    Uses spaCy NLP (without regex) to determine if the user is asking about the weather.
+    Returns True if a weather-related intent is detected.
+    """
+    doc = nlp(message)
+    weather_keywords = {"weather", "temperature", "forecast", "climate", "raining", "snowing", "humidity", "wind", "storm", "sunny", "rain", "snow", "cloudy"}
+
+    for token in doc:
+        # Check if token is a direct weather-related word
+        if token.lemma_ in weather_keywords:
+           # print(f"[DEBUG] Weather intent detected via lemma: {token.lemma_}")  # Debugging
+            return True
+        
+        # Check if token is related to asking about weather
+        if token.dep_ in {"ROOT", "attr", "dobj", "nsubj"} and token.head.lemma_ in weather_keywords:
+           #  print(f"[DEBUG] Weather intent detected via dependency parsing: {token.text}")  # Debugging
+            return True
+
+    print("[DEBUG] No weather intent detected.")  # Debugging
+    return False
 
 def weather_detection(message):
-    pattern = r".*\b(?:current\s+weather|weather|temperature)\s+(?:in|for)?\s*([a-zA-Z\s]+)\b.*"
-    match = re.search(pattern, message, re.IGNORECASE)
+    """
+    Extracts the city name from user input using spaCy NLP.
+    If no city is detected, returns None.
+    """
+    doc = nlp(message)
 
-    if match:
-        city = match.group(1) # captures City name
+    # Step 1: Check if user is asking about weather
+    if not detect_weather_intent(message):
+       #  print("[DEBUG] Message is not about weather. Skipping weather detection.")  # Debugging
+        return None
 
-        prompt = (
+    city = None
+
+    # Step 2: Extract city name using Named Entity Recognition (NER)
+    for ent in doc.ents:
+        # print(f"[DEBUG] Entity Found: {ent.text} - Label: {ent.label_}")  # Debugging
+        if ent.label_ in ["GPE", "LOC"]:  # GPE = Geopolitical Entity, LOC = Location
+            city = ent.text
+            break  # Take the first detected location
+
+    if not city:
+        # print("[DEBUG] No city detected.")  # Debugging
+        return None  # No valid city found
+
+    # print(f"[DEBUG] Extracted City: {city}")  # Debugging
+
+    # Send city name to OpenAI for lat/lon lookup
+    prompt = (
         f"Find the latitude and longitude of {city}. "
-        "Do not use cardinal directions. Give the coordinates in + or - <coordinates>"
+        "Do not use cardinal directions. Give the coordinates in + or - <coordinates>. "
         "Return only a JSON object formatted as: {\"latitude\": value, \"longitude\": value}"
     )
-        
+
+    try:
         response = openai.ChatCompletion.create(
             model="gpt-3.5-turbo",
             messages=[{"role": "user", "content": prompt}],
@@ -511,10 +560,9 @@ def weather_detection(message):
             temperature=0.3
         )
 
-         # Extract the response content
         response_text = response['choices'][0]['message']['content'].strip()
+       # print(f"[DEBUG] OpenAI Response: {response_text}")  # Debugging
 
-        # Safely parse JSON response
         coordinates = json.loads(response_text)
 
         if "latitude" in coordinates and "longitude" in coordinates:
@@ -523,10 +571,10 @@ def weather_detection(message):
                 "latitude": coordinates["latitude"],
                 "longitude": coordinates["longitude"]
             }
-        else:
-            print("I'm sorry, I am having trouble retriving the coordinates at the moment.")
-            return None
-        
+    except Exception as e:
+       # print(f"[DEBUG] Error in OpenAI request: {e}")  # Debugging
+       print("I'm sorry, I am having trouble retrieving the coordinates at the moment.")
+
     return None
         
 def get_weather(user_message):
