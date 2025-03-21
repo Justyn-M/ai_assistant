@@ -706,24 +706,88 @@ def humanize_currency_response(raw_data, details, exchange_info_str):
 
 ##### Calendar Functions #####
 def detect_calendar_intent(user_input):
-    """
-    Determines if the user is making a calendar-related request.
-    Returns a dictionary with detected intent and extracted details.
-    """
-    patterns = {
-        "add_event": r"(?:schedule|add|create|set)\s+(?:an|a)?\s*(event|meeting|appointment|reminder)?\s*(?:called|named|titled)?\s*(.*?)\s+on\s+(\d{4}-\d{2}-\d{2})\s+at\s+(\d{1,2}:\d{2})",
-        "delete_event": r"(?:delete|remove|cancel)\s+(?:an|a)?\s*(event|meeting|appointment|reminder)?\s*(?:called|named|titled)?\s*(.*?)\s*(?:on\s+(\d{4}-\d{2}-\d{2}))?",
-        "update_event": r"(?:update|modify|change)\s+(?:an|a)?\s*(event|meeting|appointment|reminder)?\s*(?:called|named|titled)?\s*(.*?)\s*(?:to\s+(\d{4}-\d{2}-\d{2})\s+at\s+(\d{1,2}:\d{2}))?",
-        "get_events": r"(?:list|show|fetch|get)\s+(?:my)?\s*(events|appointments|schedule|calendar)\s*(?:on\s+(\d{4}-\d{2}-\d{2}))?",
-        "free_time": r"(?:when am I free|find free time|check availability|available slots)"
-    }
+    doc = nlp(user_input.lower())
 
-    for intent, pattern in patterns.items():
-        match = re.search(pattern, user_input, re.IGNORECASE)
-        if match:
-            return {"intent": intent, "details": match.groups()}
+    event_keywords = {"event", "meeting", "appointment", "reminder"}
+    add_keywords = {"schedule", "add", "create", "set"}
+    delete_keywords = {"delete", "remove", "cancel"}
+    update_keywords = {"update", "modify", "change"}
+    get_keywords = {"list", "show", "fetch", "get"}
+    free_keywords = {"free", "availability", "available"}
 
-    return None  # No match found
+    date_str, time_str, summary = None, None, None
+    detected_intent = None
+
+    # Step 1: Detect intent
+    for token in doc:
+        if token.lemma_ in add_keywords:
+            detected_intent = "add_event"
+            break
+        elif token.lemma_ in delete_keywords:
+            detected_intent = "delete_event"
+            break
+        elif token.lemma_ in update_keywords:
+            detected_intent = "update_event"
+            break
+        elif token.lemma_ in get_keywords:
+            detected_intent = "get_events"
+            break
+        elif token.lemma_ in free_keywords:
+            detected_intent = "free_time"
+            break
+
+    if not detected_intent:
+        print("[DEBUG] No intent detected.")
+        return None
+
+    # Step 2: Extract entities
+    for ent in doc.ents:
+        print(f"[DEBUG] Entity: {ent.text} - Label: {ent.label_}")
+        if ent.label_ == "DATE" and not date_str:
+            try:
+                parsed_date = dateparser.parse(ent.text)
+                date_str = parsed_date.strftime("%Y-%m-%d")
+            except Exception as e:
+                print(f"[DEBUG] Date parsing error: {e}")
+        elif ent.label_ in {"TIME", "CARDINAL"} and not time_str:
+            # Fallback for time-like values such as "14:30" labeled as CARDINAL
+            time_match = re.match(r"\b\d{1,2}:\d{2}\b", ent.text)
+            if time_match:
+                time_str = ent.text.strip()
+            else:
+                try:
+                    parsed_time = dateparser.parse(ent.text)
+                    if parsed_time:
+                        time_str = parsed_time.strftime("%H:%M")
+                except Exception as e:
+                    print(f"[DEBUG] Time parsing error: {e}")
+        elif ent.label_ in {"PERSON", "ORG", "EVENT"} and not summary:
+            summary = ent.text.strip()
+
+    # Step 3: Fallback for summary from noun chunks (e.g., “meeting with Andrea”)
+    if not summary:
+        for chunk in doc.noun_chunks:
+            if any(kw in chunk.text.lower() for kw in event_keywords):
+                summary = chunk.text.strip()
+                break
+
+    # Final Debug Check
+    print(f"[DEBUG] Intent: {detected_intent}, Summary: {summary}, Date: {date_str}, Time: {time_str}")
+
+    # Step 4: Return final structure
+    if detected_intent == "add_event" and summary and date_str and time_str:
+        return {"intent": "add_event", "details": (None, summary, date_str, time_str)}
+    elif detected_intent == "delete_event" and summary:
+        return {"intent": "delete_event", "details": (None, summary, date_str)}
+    elif detected_intent == "update_event" and summary and date_str and time_str:
+        return {"intent": "update_event", "details": (None, summary, date_str, time_str)}
+    elif detected_intent == "get_events":
+        return {"intent": "get_events", "details": (None, date_str)}
+    elif detected_intent == "free_time":
+        return {"intent": "free_time", "details": ()}
+
+    print("[DEBUG] Intent detected but not all required details were extracted.")
+    return None
 
 
 def main():
