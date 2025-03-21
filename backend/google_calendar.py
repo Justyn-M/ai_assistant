@@ -28,8 +28,8 @@ def add_event(summary, date, time, reminders=None, color_id=1):
 
     event = {
         'summary': summary,
-        'start': {'dateTime': event_datetime, 'timeZone': 'UTC'},
-        'end': {'dateTime': event_datetime, 'timeZone': 'UTC'},
+        'start': {'dateTime': event_datetime, 'timeZone': 'Australia/Perth'},
+        'end': {'dateTime': event_datetime, 'timeZone': 'Australia/Perth'},
         'colorId': str(color_id),  # Convert color_id to string
         'reminders': {
             'useDefault': False,
@@ -89,34 +89,41 @@ def delete_event(summary, date=None):
     return f"No matching event found for '{summary}' on {date}."
 
 def update_event(summary, new_date=None, new_time=None, new_summary=None):
-    """Updates an event's details in Google Calendar."""
+    """Updates an event's time, date, or name in Google Calendar."""
     service = authenticate_calendar()
-
     now = datetime.datetime.utcnow().isoformat() + 'Z'
-    
+
     events_result = service.events().list(
         calendarId='justyn2s04mahen23@gmail.com', timeMin=now,
         singleEvents=True, orderBy='startTime'
     ).execute()
 
     events = events_result.get('items', [])
-    
+
     for event in events:
         if event['summary'] == summary:
-            # Update the event details
             if new_summary:
                 event['summary'] = new_summary
-            if new_date and new_time:
-                event['start']['dateTime'] = f"{new_date}T{new_time}:00"
-                event['end']['dateTime'] = f"{new_date}T{new_time}:00"
+
+            if new_date or new_time:
+                original_datetime = event['start'].get('dateTime')
+                if original_datetime:
+                    dt = datetime.datetime.fromisoformat(original_datetime[:-1])  # Remove 'Z'
+                    updated_date = new_date or dt.strftime("%Y-%m-%d")
+                    updated_time = new_time or dt.strftime("%H:%M")
+                    updated_datetime = f"{updated_date}T{updated_time}:00"
+                    event['start']['dateTime'] = updated_datetime
+                    event['end']['dateTime'] = updated_datetime
 
             updated_event = service.events().update(
-                calendarId='justyn2s04mahen23@gmail.com', eventId=event['id'], body=event
+                calendarId='justyn2s04mahen23@gmail.com',
+                eventId=event['id'], body=event
             ).execute()
 
-            return f"Event '{summary}' updated successfully!"
+            return f"Event '{summary}' updated successfully."
 
     return f"No event found with name '{summary}'."
+
 
 
 def get_events_by_date(date):
@@ -146,8 +153,8 @@ def add_recurring_event(summary, start_date, start_time, recurrence_rule):
     
     event = {
         'summary': summary,
-        'start': {'dateTime': event_datetime, 'timeZone': 'UTC'},
-        'end': {'dateTime': event_datetime, 'timeZone': 'UTC'},
+        'start': {'dateTime': event_datetime, 'timeZone': 'Australia/Perth'},
+        'end': {'dateTime': event_datetime, 'timeZone': 'Australia/Perth'},
         'recurrence': [recurrence_rule]
     }
 

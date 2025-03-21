@@ -708,41 +708,38 @@ def humanize_currency_response(raw_data, details, exchange_info_str):
 def detect_calendar_intent(user_input):
     doc = nlp(user_input.lower())
 
+    # Define keywords
     event_keywords = {"event", "meeting", "appointment", "reminder"}
     add_keywords = {"schedule", "add", "create", "set"}
     delete_keywords = {"delete", "remove", "cancel"}
     update_keywords = {"update", "modify", "change"}
     get_keywords = {"list", "show", "fetch", "get"}
     free_keywords = {"free", "availability", "available"}
+    recurring_keywords = {"every", "weekly", "daily", "monthly", "recurring"}
 
-    date_str, time_str, summary = None, None, None
+    date_str, time_str, summary, recurrence_rule = None, None, None, None
     detected_intent = None
 
-    # Step 1: Detect intent
+    # Detect intent
     for token in doc:
         if token.lemma_ in add_keywords:
             detected_intent = "add_event"
-            break
         elif token.lemma_ in delete_keywords:
             detected_intent = "delete_event"
-            break
         elif token.lemma_ in update_keywords:
             detected_intent = "update_event"
-            break
         elif token.lemma_ in get_keywords:
             detected_intent = "get_events"
-            break
         elif token.lemma_ in free_keywords:
             detected_intent = "free_time"
-            break
 
-    if not detected_intent:
-        print("[DEBUG] No intent detected.")
-        return None
+    # Check for recurrence
+    if detected_intent == "add_event" and any(word in user_input.lower() for word in recurring_keywords):
+        detected_intent = "add_recurring_event"
+        recurrence_rule = "RRULE:FREQ=WEEKLY"
 
-    # Step 2: Extract entities
+    # Extract date/time entities
     for ent in doc.ents:
-        print(f"[DEBUG] Entity: {ent.text} - Label: {ent.label_}")
         if ent.label_ == "DATE" and not date_str:
             try:
                 parsed_date = dateparser.parse(ent.text)
@@ -750,7 +747,6 @@ def detect_calendar_intent(user_input):
             except Exception as e:
                 print(f"[DEBUG] Date parsing error: {e}")
         elif ent.label_ in {"TIME", "CARDINAL"} and not time_str:
-            # Fallback for time-like values such as "14:30" labeled as CARDINAL
             time_match = re.match(r"\b\d{1,2}:\d{2}\b", ent.text)
             if time_match:
                 time_str = ent.text.strip()
@@ -761,33 +757,66 @@ def detect_calendar_intent(user_input):
                         time_str = parsed_time.strftime("%H:%M")
                 except Exception as e:
                     print(f"[DEBUG] Time parsing error: {e}")
-        elif ent.label_ in {"PERSON", "ORG", "EVENT"} and not summary:
-            summary = ent.text.strip()
 
-    # Step 3: Fallback for summary from noun chunks (e.g., “meeting with Andrea”)
+    # Better summary extraction
+    # 1. Use the full chunk if it includes both event keyword and "with" (e.g., "meeting with the CEO")
+    for chunk in doc.noun_chunks:
+        text = chunk.text.lower()
+        if any(kw in text for kw in event_keywords) and "with" in text:
+            summary = chunk.text.strip()
+            break
+
+    # 2. Fallback: Combine event keyword + entity
     if not summary:
-        for chunk in doc.noun_chunks:
-            if any(kw in chunk.text.lower() for kw in event_keywords):
-                summary = chunk.text.strip()
-                break
+        event_word = None
+        target_entity = None
+        for token in doc:
+            if token.lemma_ in event_keywords:
+                event_word = token.text
+        for ent in doc.ents:
+            if ent.label_ in {"PERSON", "ORG"}:
+                target_entity = ent.text
+        if event_word and target_entity:
+            summary = f"{event_word} with {target_entity}"
 
-    # Final Debug Check
-    print(f"[DEBUG] Intent: {detected_intent}, Summary: {summary}, Date: {date_str}, Time: {time_str}")
+    # 3. Final fallback: Remove date/time words and use what's left
+    if not summary:
+        cleaned_input = user_input
+        for ent in doc.ents:
+            if ent.label_ in {"DATE", "TIME", "CARDINAL"}:
+                cleaned_input = cleaned_input.replace(ent.text, "")
+        all_keywords = add_keywords | delete_keywords | update_keywords | get_keywords | free_keywords
+        cleaned_words = [w for w in cleaned_input.split() if w.lower() not in all_keywords]
+        cleaned_summary = " ".join(cleaned_words).strip()
+        if cleaned_summary:
+            summary = cleaned_summary
 
-    # Step 4: Return final structure
+    # Final Debug
+    print(f"[DEBUG] Intent: {detected_intent}, Summary: {summary}, Date: {date_str}, Time: {time_str}, Recurrence: {recurrence_rule}")
+
+    # Return intent and data
     if detected_intent == "add_event" and summary and date_str and time_str:
         return {"intent": "add_event", "details": (None, summary, date_str, time_str)}
+
+    elif detected_intent == "add_recurring_event" and summary and date_str and time_str:
+        return {"intent": "add_recurring_event", "details": (summary, date_str, time_str, recurrence_rule)}
+
     elif detected_intent == "delete_event" and summary:
         return {"intent": "delete_event", "details": (None, summary, date_str)}
-    elif detected_intent == "update_event" and summary and date_str and time_str:
-        return {"intent": "update_event", "details": (None, summary, date_str, time_str)}
+
+    elif detected_intent == "update_event" and summary:
+        return {"intent": "update_event", "details": (summary, date_str, time_str, None)}
+
     elif detected_intent == "get_events":
         return {"intent": "get_events", "details": (None, date_str)}
+
     elif detected_intent == "free_time":
         return {"intent": "free_time", "details": ()}
 
     print("[DEBUG] Intent detected but not all required details were extracted.")
     return None
+
+
 
 
 def main():
@@ -848,22 +877,29 @@ def main():
                 if intent == "add_event":
                     _, summary, date, time = details
                     response = add_event(summary, date, time)
-                
+
+                elif intent == "add_recurring_event":
+                    summary, start_date, start_time, recurrence_rule = details
+                    response = add_recurring_event(summary, start_date, start_time, recurrence_rule)
+
                 elif intent == "delete_event":
                     _, summary, date = details
                     response = delete_event(summary, date)
-                
+
+                elif intent == "delete_past_events":
+                    response = delete_past_events()
+
                 elif intent == "update_event":
                     _, summary, new_date, new_time = details
                     response = update_event(summary, new_date, new_time)
-                
+
                 elif intent == "get_events":
                     _, date = details
                     response = get_events_by_date(date) if date else get_upcoming_events()
-                
+
                 elif intent == "free_time":
                     response = check_free_time()
-                
+
                 print("Yandere AI:", response)
                 messages.append({"role": "assistant", "content": response})
                 continue  # Skip normal AI response
