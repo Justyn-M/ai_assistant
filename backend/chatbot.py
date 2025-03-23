@@ -8,6 +8,8 @@ import json  # For persistent memory
 import re
 import feedparser
 import requests
+import datetime
+
 
 # SpaCy imports
 import spacy
@@ -705,6 +707,7 @@ def humanize_currency_response(raw_data, details, exchange_info_str):
     return final_text
 
 ##### Calendar Functions #####
+# RRULE strings are what google calendar reads.
 def detect_calendar_intent(user_input):
     doc = nlp(user_input.lower())
 
@@ -712,100 +715,89 @@ def detect_calendar_intent(user_input):
     event_keywords = {"event", "meeting", "appointment", "reminder"}
     add_keywords = {"schedule", "add", "create", "set"}
     delete_keywords = {"delete", "remove", "cancel"}
-    update_keywords = {"update", "modify", "change"}
     get_keywords = {"list", "show", "fetch", "get"}
     free_keywords = {"free", "availability", "available"}
-    recurring_keywords = {"every", "weekly", "daily", "monthly", "recurring"}
 
     date_str, time_str, summary, recurrence_rule = None, None, None, None
     detected_intent = None
 
-    # Detect intent
+    # 1. Detect intent
     for token in doc:
         if token.lemma_ in add_keywords:
             detected_intent = "add_event"
         elif token.lemma_ in delete_keywords:
             detected_intent = "delete_event"
-        elif token.lemma_ in update_keywords:
-            detected_intent = "update_event"
         elif token.lemma_ in get_keywords:
             detected_intent = "get_events"
         elif token.lemma_ in free_keywords:
             detected_intent = "free_time"
 
-    # Check for recurrence
-    if detected_intent == "add_event" and any(word in user_input.lower() for word in recurring_keywords):
+    # 2. Check recurrence rule
+    recurrence_rule = extract_recurrence_rule(user_input)
+    if detected_intent == "add_event" and recurrence_rule:
         detected_intent = "add_recurring_event"
-        recurrence_rule = "RRULE:FREQ=WEEKLY"
 
-    # Extract date/time entities
+    # 3. Extract date and time entities
     for ent in doc.ents:
         if ent.label_ == "DATE" and not date_str:
-            try:
-                parsed_date = dateparser.parse(ent.text)
+            parsed_date = dateparser.parse(ent.text)
+            if parsed_date:
                 date_str = parsed_date.strftime("%Y-%m-%d")
-            except Exception as e:
-                print(f"[DEBUG] Date parsing error: {e}")
+            #else:
+                # print(f"[DEBUG] Skipped non-parseable DATE entity: {ent.text}")
+
         elif ent.label_ in {"TIME", "CARDINAL"} and not time_str:
             time_match = re.match(r"\b\d{1,2}:\d{2}\b", ent.text)
             if time_match:
-                time_str = ent.text.strip()
+                time_str = time_match.group()
             else:
-                try:
+               # try:
                     parsed_time = dateparser.parse(ent.text)
                     if parsed_time:
                         time_str = parsed_time.strftime("%H:%M")
-                except Exception as e:
-                    print(f"[DEBUG] Time parsing error: {e}")
+                #except Exception as e:
+                    #print(f"[DEBUG] Time parsing error: {e}")
 
-    # Better summary extraction
-    # 1. Use the full chunk if it includes both event keyword and "with" (e.g., "meeting with the CEO")
-    for chunk in doc.noun_chunks:
-        text = chunk.text.lower()
-        if any(kw in text for kw in event_keywords) and "with" in text:
-            summary = chunk.text.strip()
-            break
+    # Fallback regex if spaCy/dateparser fails to find time
+    if not time_str:
+        fallback_match = re.search(r"\b\d{1,2}:\d{2}\b", user_input)
+        if fallback_match:
+            time_str = fallback_match.group()
+           # print(f"[DEBUG] Extracted time from fallback regex: {time_str}")
 
-    # 2. Fallback: Combine event keyword + entity
-    if not summary:
-        event_word = None
-        target_entity = None
-        for token in doc:
-            if token.lemma_ in event_keywords:
-                event_word = token.text
-        for ent in doc.ents:
-            if ent.label_ in {"PERSON", "ORG"}:
-                target_entity = ent.text
-        if event_word and target_entity:
-            summary = f"{event_word} with {target_entity}"
+    # 4. Summary cleanup
+    cleaned_input = user_input
+    for ent in doc.ents:
+        if ent.label_ in {"DATE", "TIME", "CARDINAL"}:
+            cleaned_input = re.sub(rf"\b(?:at|on|by|to|for)?\s*{re.escape(ent.text)}", "", cleaned_input, flags=re.IGNORECASE)
+            cleaned_input = re.sub(r'\s{2,}', ' ', cleaned_input).strip()
 
-    # 3. Final fallback: Remove date/time words and use what's left
-    if not summary:
-        cleaned_input = user_input
-        for ent in doc.ents:
-            if ent.label_ in {"DATE", "TIME", "CARDINAL"}:
-                cleaned_input = cleaned_input.replace(ent.text, "")
-        all_keywords = add_keywords | delete_keywords | update_keywords | get_keywords | free_keywords
-        cleaned_words = [w for w in cleaned_input.split() if w.lower() not in all_keywords]
-        cleaned_summary = " ".join(cleaned_words).strip()
-        if cleaned_summary:
-            summary = cleaned_summary
+    # Remove command words
+    all_keywords = add_keywords | delete_keywords | get_keywords | free_keywords
+    cleaned_words = [word for word in cleaned_input.split() if word.lower() not in all_keywords]
+    cleaned_summary = " ".join(cleaned_words).strip()
 
-    # Final Debug
-    print(f"[DEBUG] Intent: {detected_intent}, Summary: {summary}, Date: {date_str}, Time: {time_str}, Recurrence: {recurrence_rule}")
+    # Remove filler words from beginning and end
+    cleaned_summary = re.sub(r'^(a|an|the)\s+', '', cleaned_summary, flags=re.IGNORECASE)
+    cleaned_summary = re.sub(r'\s+(on|at|to|by|for)[\s\W]*$', '', cleaned_summary, flags=re.IGNORECASE)
 
-    # Return intent and data
+    if cleaned_summary:
+        summary = cleaned_summary
+
+    # 5. Final debug info
+    #print(f"[DEBUG] Intent: {detected_intent}, Summary: {summary}, Date: {date_str}, Time: {time_str}, Recurrence: {recurrence_rule}")
+
+    # 6. Return intent & details
     if detected_intent == "add_event" and summary and date_str and time_str:
         return {"intent": "add_event", "details": (None, summary, date_str, time_str)}
 
-    elif detected_intent == "add_recurring_event" and summary and date_str and time_str:
+    elif detected_intent == "add_recurring_event" and summary and time_str:
+        if not date_str:
+            date_str = datetime.datetime.today().strftime("%Y-%m-%d")
         return {"intent": "add_recurring_event", "details": (summary, date_str, time_str, recurrence_rule)}
 
     elif detected_intent == "delete_event" and summary:
         return {"intent": "delete_event", "details": (None, summary, date_str)}
-
-    elif detected_intent == "update_event" and summary:
-        return {"intent": "update_event", "details": (summary, date_str, time_str, None)}
 
     elif detected_intent == "get_events":
         return {"intent": "get_events", "details": (None, date_str)}
@@ -813,11 +805,43 @@ def detect_calendar_intent(user_input):
     elif detected_intent == "free_time":
         return {"intent": "free_time", "details": ()}
 
-    print("[DEBUG] Intent detected but not all required details were extracted.")
+    #print("[DEBUG] Intent detected but not all required details were extracted.")
     return None
 
-
-
+## Calendar function to check recurrance.
+def extract_recurrence_rule(text):
+    text = text.lower()
+    if "every day" in text or "daily" in text:
+        return "RRULE:FREQ=DAILY"
+    elif "every weekday" in text:
+        return "RRULE:FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR"
+    elif "every week" in text or "weekly" in text:
+        return "RRULE:FREQ=WEEKLY"
+    elif match := re.search(r"every (\d+) weeks?", text):
+        interval = match.group(1)
+        return f"RRULE:FREQ=WEEKLY;INTERVAL={interval}"
+    elif match := re.search(r"every (\d+) days?", text):
+        interval = match.group(1)
+        return f"RRULE:FREQ=DAILY;INTERVAL={interval}"
+    elif match := re.search(r"every (\d+) months?", text):
+        interval = match.group(1)
+        return f"RRULE:FREQ=MONTHLY;INTERVAL={interval}"
+    elif match := re.search(r"every (monday|tuesday|wednesday|thursday|friday|saturday|sunday)", text):
+        day_map = {
+            "monday": "MO", "tuesday": "TU", "wednesday": "WE",
+            "thursday": "TH", "friday": "FR", "saturday": "SA", "sunday": "SU"
+        }
+        day = day_map[match.group(1)]
+        return f"RRULE:FREQ=WEEKLY;BYDAY={day}"
+    elif match := re.search(r"first (\w+) of every month", text):
+        day_map = {
+            "monday": "MO", "tuesday": "TU", "wednesday": "WE",
+            "thursday": "TH", "friday": "FR", "saturday": "SA", "sunday": "SU"
+        }
+        day = day_map.get(match.group(1))
+        if day:
+            return f"RRULE:FREQ=MONTHLY;BYDAY=1{day}"
+    return None
 
 def main():
     global last_assistant_response, is_follow_up, follow_up_count, user_is_away
@@ -888,10 +912,6 @@ def main():
 
                 elif intent == "delete_past_events":
                     response = delete_past_events()
-
-                elif intent == "update_event":
-                    _, summary, new_date, new_time = details
-                    response = update_event(summary, new_date, new_time)
 
                 elif intent == "get_events":
                     _, date = details
