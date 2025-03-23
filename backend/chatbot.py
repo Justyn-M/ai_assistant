@@ -9,6 +9,7 @@ import re
 import feedparser
 import requests
 import datetime
+import calendar
 
 
 # SpaCy imports
@@ -721,7 +722,7 @@ def detect_calendar_intent(user_input):
     date_str, time_str, summary, recurrence_rule = None, None, None, None
     detected_intent = None
 
-    # 1. Detect intent
+    # Detect intent
     for token in doc:
         if token.lemma_ in add_keywords:
             detected_intent = "add_event"
@@ -732,40 +733,43 @@ def detect_calendar_intent(user_input):
         elif token.lemma_ in free_keywords:
             detected_intent = "free_time"
 
-    # 2. Check recurrence rule
-    recurrence_rule = extract_recurrence_rule(user_input)
+    # Extract recurrence
+    recurrence_rule, override_date = extract_recurrence_rule(user_input)
     if detected_intent == "add_event" and recurrence_rule:
         detected_intent = "add_recurring_event"
 
-    # 3. Extract date and time entities
+    # Extract date/time entities
     for ent in doc.ents:
         if ent.label_ == "DATE" and not date_str:
             parsed_date = dateparser.parse(ent.text)
             if parsed_date:
                 date_str = parsed_date.strftime("%Y-%m-%d")
-            #else:
-                # print(f"[DEBUG] Skipped non-parseable DATE entity: {ent.text}")
-
+            else:
+                print(f"[DEBUG] Skipped non-parseable DATE entity: {ent.text}")
         elif ent.label_ in {"TIME", "CARDINAL"} and not time_str:
             time_match = re.match(r"\b\d{1,2}:\d{2}\b", ent.text)
             if time_match:
                 time_str = time_match.group()
             else:
-               # try:
+                try:
                     parsed_time = dateparser.parse(ent.text)
                     if parsed_time:
                         time_str = parsed_time.strftime("%H:%M")
-                #except Exception as e:
-                    #print(f"[DEBUG] Time parsing error: {e}")
+                except Exception as e:
+                    print(f"[DEBUG] Time parsing error: {e}")
 
-    # Fallback regex if spaCy/dateparser fails to find time
+    # Fallback: Try regex to catch 11:00 etc. in raw string
     if not time_str:
         fallback_match = re.search(r"\b\d{1,2}:\d{2}\b", user_input)
         if fallback_match:
             time_str = fallback_match.group()
-           # print(f"[DEBUG] Extracted time from fallback regex: {time_str}")
+            print(f"[DEBUG] Extracted time from fallback regex: {time_str}")
 
-    # 4. Summary cleanup
+    # Use override date if detected by recurrence rule
+    if not date_str and override_date:
+        date_str = override_date
+
+    # === Clean and extract summary ===
     cleaned_input = user_input
     for ent in doc.ents:
         if ent.label_ in {"DATE", "TIME", "CARDINAL"}:
@@ -777,17 +781,17 @@ def detect_calendar_intent(user_input):
     cleaned_words = [word for word in cleaned_input.split() if word.lower() not in all_keywords]
     cleaned_summary = " ".join(cleaned_words).strip()
 
-    # Remove filler words from beginning and end
+    # Remove filler words
     cleaned_summary = re.sub(r'^(a|an|the)\s+', '', cleaned_summary, flags=re.IGNORECASE)
     cleaned_summary = re.sub(r'\s+(on|at|to|by|for)[\s\W]*$', '', cleaned_summary, flags=re.IGNORECASE)
 
     if cleaned_summary:
         summary = cleaned_summary
 
-    # 5. Final debug info
-    #print(f"[DEBUG] Intent: {detected_intent}, Summary: {summary}, Date: {date_str}, Time: {time_str}, Recurrence: {recurrence_rule}")
+    # === Debug output ===
+    print(f"[DEBUG] Intent: {detected_intent}, Summary: {summary}, Date: {date_str}, Time: {time_str}, Recurrence: {recurrence_rule}")
 
-    # 6. Return intent & details
+    # === Return intent and extracted data ===
     if detected_intent == "add_event" and summary and date_str and time_str:
         return {"intent": "add_event", "details": (None, summary, date_str, time_str)}
 
@@ -805,43 +809,89 @@ def detect_calendar_intent(user_input):
     elif detected_intent == "free_time":
         return {"intent": "free_time", "details": ()}
 
-    #print("[DEBUG] Intent detected but not all required details were extracted.")
+    print("[DEBUG] Intent detected but not all required details were extracted.")
     return None
+
 
 ## Calendar function to check recurrance.
 def extract_recurrence_rule(text):
     text = text.lower()
-    if "every day" in text or "daily" in text:
-        return "RRULE:FREQ=DAILY"
-    elif "every weekday" in text:
-        return "RRULE:FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR"
-    elif "every week" in text or "weekly" in text:
-        return "RRULE:FREQ=WEEKLY"
-    elif match := re.search(r"every (\d+) weeks?", text):
+
+    day_map = {
+        "monday": "MO", "tuesday": "TU", "wednesday": "WE",
+        "thursday": "TH", "friday": "FR", "saturday": "SA", "sunday": "SU"
+    }
+
+    # === New Pattern: "every 9th of July" or "every July 9"
+    match = re.search(r"every (\d{1,2})(st|nd|rd|th)? of (\w+)", text)
+    if not match:
+        match = re.search(r"every (\w+) (\d{1,2})(st|nd|rd|th)?", text)
+
+    if match:
+        if len(match.groups()) == 3:
+            # Pattern 1: every 9th of July
+            day = match.group(1)
+            month = match.group(3)
+        else:
+            # Pattern 2: every July 9
+            month = match.group(1)
+            day = match.group(2)
+
+        try:
+            # Try parsing the month name into a number
+            month_number = list(calendar.month_name).index(month.capitalize())
+            # Get today's year for the start date
+            year = datetime.datetime.today().year
+            start_date = f"{year}-{month_number:02}-{int(day):02}"
+            return "RRULE:FREQ=YEARLY", start_date
+        except Exception as e:
+            print(f"[DEBUG] Error parsing yearly date: {e}")
+
+    # === Existing rules below ===
+
+    if "every year" in text or "yearly" in text:
+        return "RRULE:FREQ=YEARLY", None
+    elif match := re.search(r"every (\d+) years?", text):
         interval = match.group(1)
-        return f"RRULE:FREQ=WEEKLY;INTERVAL={interval}"
+        return f"RRULE:FREQ=YEARLY;INTERVAL={interval}", None
+
+    if "fortnightly" in text or 'every fortnight':
+        return "RRULE:FREQ=WEEKLY;INTERVAL=2", None
+    elif "every third week" in text:
+        return "RRULE:FREQ=WEEKLY;INTERVAL=3", None
+
+    if "every day" in text or "daily" in text:
+        return "RRULE:FREQ=DAILY", None
+    elif "every weekday" in text:
+        return "RRULE:FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR", None
+    elif "every week" in text or "weekly" in text:
+        return "RRULE:FREQ=WEEKLY", None
+
+    if match := re.search(r"every (\d+) weeks?", text):
+        interval = match.group(1)
+        return f"RRULE:FREQ=WEEKLY;INTERVAL={interval}", None
     elif match := re.search(r"every (\d+) days?", text):
         interval = match.group(1)
-        return f"RRULE:FREQ=DAILY;INTERVAL={interval}"
+        return f"RRULE:FREQ=DAILY;INTERVAL={interval}", None
     elif match := re.search(r"every (\d+) months?", text):
         interval = match.group(1)
-        return f"RRULE:FREQ=MONTHLY;INTERVAL={interval}"
-    elif match := re.search(r"every (monday|tuesday|wednesday|thursday|friday|saturday|sunday)", text):
-        day_map = {
-            "monday": "MO", "tuesday": "TU", "wednesday": "WE",
-            "thursday": "TH", "friday": "FR", "saturday": "SA", "sunday": "SU"
-        }
+        return f"RRULE:FREQ=MONTHLY;INTERVAL={interval}", None
+
+    if match := re.search(r"every (monday|tuesday|wednesday|thursday|friday|saturday|sunday)", text):
         day = day_map[match.group(1)]
-        return f"RRULE:FREQ=WEEKLY;BYDAY={day}"
-    elif match := re.search(r"first (\w+) of every month", text):
-        day_map = {
-            "monday": "MO", "tuesday": "TU", "wednesday": "WE",
-            "thursday": "TH", "friday": "FR", "saturday": "SA", "sunday": "SU"
-        }
+        return f"RRULE:FREQ=WEEKLY;BYDAY={day}", None
+
+    if match := re.search(r"first (\w+) of every month", text):
         day = day_map.get(match.group(1))
         if day:
-            return f"RRULE:FREQ=MONTHLY;BYDAY=1{day}"
-    return None
+            return f"RRULE:FREQ=MONTHLY;BYDAY=1{day}", None
+    if match := re.search(r"last (\w+) of every month", text):
+        day = day_map.get(match.group(1))
+        if day:
+            return f"RRULE:FREQ=MONTHLY;BYDAY=-1{day}", None
+
+    return None, None
+
 
 def main():
     global last_assistant_response, is_follow_up, follow_up_count, user_is_away
