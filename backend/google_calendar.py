@@ -23,7 +23,8 @@ def add_event(summary, date, time, reminders=None, color_id=1):
     if reminders is None:
         reminders = [
             {'method': 'popup', 'minutes': 30},  # Pop-up 30 minutes before
-            {'method': 'email', 'minutes': 60}   # Email 1 hour before
+            # This doesnt actually work for current implementations due to an unknown Google issue
+            # Set reminders manually universally on Google calender. Can do multiple reminders.
         ]
 
     event = {
