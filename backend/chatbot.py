@@ -734,9 +734,10 @@ def detect_calendar_intent(user_input):
             detected_intent = "free_time"
 
     # Extract recurrence
-    recurrence_rule, override_date = extract_recurrence_rule(user_input)
-    if detected_intent == "add_event" and recurrence_rule:
+    recurrence_rule, override_date, is_recurring = extract_recurrence_rule(user_input)
+    if detected_intent == "add_event" and is_recurring:
         detected_intent = "add_recurring_event"
+
 
     # Extract date/time entities
     for ent in doc.ents:
@@ -816,6 +817,7 @@ def detect_calendar_intent(user_input):
 ## Calendar function to check recurrance.
 def extract_recurrence_rule(text):
     text = text.lower()
+    is_recurring = False
 
     day_map = {
         "monday": "MO", "tuesday": "TU", "wednesday": "WE",
@@ -828,69 +830,77 @@ def extract_recurrence_rule(text):
         match = re.search(r"every (\w+) (\d{1,2})(st|nd|rd|th)?", text)
 
     if match:
+        is_recurring = True
         if len(match.groups()) == 3:
-            # Pattern 1: every 9th of July
             day = match.group(1)
             month = match.group(3)
         else:
-            # Pattern 2: every July 9
             month = match.group(1)
             day = match.group(2)
 
         try:
-            # Try parsing the month name into a number
             month_number = list(calendar.month_name).index(month.capitalize())
-            # Get today's year for the start date
             year = datetime.datetime.today().year
             start_date = f"{year}-{month_number:02}-{int(day):02}"
-            return "RRULE:FREQ=YEARLY", start_date
+            return "RRULE:FREQ=YEARLY", start_date, is_recurring
         except Exception as e:
             print(f"[DEBUG] Error parsing yearly date: {e}")
 
-    # === Existing rules below ===
-
     if "every year" in text or "yearly" in text:
-        return "RRULE:FREQ=YEARLY", None
+        is_recurring = True
+        return "RRULE:FREQ=YEARLY", None, is_recurring
     elif match := re.search(r"every (\d+) years?", text):
+        is_recurring = True
         interval = match.group(1)
-        return f"RRULE:FREQ=YEARLY;INTERVAL={interval}", None
+        return f"RRULE:FREQ=YEARLY;INTERVAL={interval}", None, is_recurring
 
-    if "fortnightly" in text or 'every fortnight':
-        return "RRULE:FREQ=WEEKLY;INTERVAL=2", None
+    if "fortnightly" in text or 'every fortnight' in text:
+        is_recurring = True
+        return "RRULE:FREQ=WEEKLY;INTERVAL=2", None, is_recurring
     elif "every third week" in text:
-        return "RRULE:FREQ=WEEKLY;INTERVAL=3", None
+        is_recurring = True
+        return "RRULE:FREQ=WEEKLY;INTERVAL=3", None, is_recurring
 
     if "every day" in text or "daily" in text:
-        return "RRULE:FREQ=DAILY", None
+        is_recurring = True
+        return "RRULE:FREQ=DAILY", None, is_recurring
     elif "every weekday" in text:
-        return "RRULE:FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR", None
+        is_recurring = True
+        return "RRULE:FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR", None, is_recurring
     elif "every week" in text or "weekly" in text:
-        return "RRULE:FREQ=WEEKLY", None
+        is_recurring = True
+        return "RRULE:FREQ=WEEKLY", None, is_recurring
 
     if match := re.search(r"every (\d+) weeks?", text):
+        is_recurring = True
         interval = match.group(1)
-        return f"RRULE:FREQ=WEEKLY;INTERVAL={interval}", None
+        return f"RRULE:FREQ=WEEKLY;INTERVAL={interval}", None, is_recurring
     elif match := re.search(r"every (\d+) days?", text):
+        is_recurring = True
         interval = match.group(1)
-        return f"RRULE:FREQ=DAILY;INTERVAL={interval}", None
+        return f"RRULE:FREQ=DAILY;INTERVAL={interval}", None, is_recurring
     elif match := re.search(r"every (\d+) months?", text):
+        is_recurring = True
         interval = match.group(1)
-        return f"RRULE:FREQ=MONTHLY;INTERVAL={interval}", None
+        return f"RRULE:FREQ=MONTHLY;INTERVAL={interval}", None, is_recurring
 
     if match := re.search(r"every (monday|tuesday|wednesday|thursday|friday|saturday|sunday)", text):
+        is_recurring = True
         day = day_map[match.group(1)]
-        return f"RRULE:FREQ=WEEKLY;BYDAY={day}", None
+        return f"RRULE:FREQ=WEEKLY;BYDAY={day}", None, is_recurring
 
     if match := re.search(r"first (\w+) of every month", text):
         day = day_map.get(match.group(1))
         if day:
-            return f"RRULE:FREQ=MONTHLY;BYDAY=1{day}", None
+            is_recurring = True
+            return f"RRULE:FREQ=MONTHLY;BYDAY=1{day}", None, is_recurring
     if match := re.search(r"last (\w+) of every month", text):
         day = day_map.get(match.group(1))
         if day:
-            return f"RRULE:FREQ=MONTHLY;BYDAY=-1{day}", None
+            is_recurring = True
+            return f"RRULE:FREQ=MONTHLY;BYDAY=-1{day}", None, is_recurring
 
-    return None, None
+    return None, None, is_recurring
 
 
 def main():
