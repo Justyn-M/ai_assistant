@@ -733,6 +733,7 @@ def detect_calendar_intent(user_input):
         elif token.lemma_ in free_keywords:
             detected_intent = "free_time"
 
+
     # Extract recurrence
     recurrence_rule, override_date, is_recurring = extract_recurrence_rule(user_input)
     if detected_intent == "add_event" and is_recurring:
@@ -902,6 +903,34 @@ def extract_recurrence_rule(text):
 
     return None, None, is_recurring
 
+def humanize_calendar_response(action_type, context_info):
+    """
+    Generate a Yandere-style response based on the type of calendar action and its context.
+    """
+    prompt = (
+        "You are a helpful Yandere AI assistant.\n\n"
+        "Your job is to respond in a sweet, possessive, affectionate, slightly obsessive tone depending on the user's calendar activity.\n\n"
+        f"Action: {action_type}\n"
+        f"Details: {context_info}\n\n"
+        "Respond in a friendly and slightly yandere tone, showing how much you care about their schedule and life. Keep it short and cute."
+    )
+
+    try:
+        response = openai.ChatCompletion.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {"role": "system", "content": "You are a helpful Yandere AI assistant."},
+                {"role": "user", "content": prompt}
+            ],
+            max_tokens=120,
+            temperature=0.75,
+        )
+
+        return response['choices'][0]['message']['content'].strip()
+    except Exception as e:
+        return f"(Oops... I got a little flustered and couldn't respond properly! >_< Error: {e})"
+
+
 
 def main():
     global last_assistant_response, is_follow_up, follow_up_count, user_is_away
@@ -960,25 +989,30 @@ def main():
 
                 if intent == "add_event":
                     _, summary, date, time = details
-                    response = add_event(summary, date, time)
+                    add_event(summary, date, time)
+                    response = humanize_calendar_response("Event Added", f"{summary} on {date} at {time}")
 
                 elif intent == "add_recurring_event":
                     summary, start_date, start_time, recurrence_rule = details
-                    response = add_recurring_event(summary, start_date, start_time, recurrence_rule)
+                    add_recurring_event(summary, start_date, start_time, recurrence_rule)
+                    response = humanize_calendar_response("Recurring Event Added", f"{summary} starting {start_date} at {start_time}, rule: {recurrence_rule}")
 
                 elif intent == "delete_event":
                     _, summary, date = details
-                    response = delete_event(summary, date)
-
-                elif intent == "delete_past_events":
-                    response = delete_past_events()
+                    calendar_response = delete_event(summary, date)
+                    response = humanize_calendar_response("Event Deletion", calendar_response)
 
                 elif intent == "get_events":
                     _, date = details
-                    response = get_events_by_date(date) if date else get_upcoming_events()
+                    calendar_response = get_events_by_date(date) if date else get_upcoming_events()
+                    response = humanize_calendar_response("Events Retrieved", calendar_response)
+
 
                 elif intent == "free_time":
-                    response = check_free_time()
+                    calendar_response = check_free_time()
+                    response = humanize_calendar_response("Free Time Checked", calendar_response)
+
+
 
                 print("Yandere AI:", response)
                 messages.append({"role": "assistant", "content": response})

@@ -185,80 +185,61 @@ def delete_past_events():
 
 
 def check_free_time():
-    """Checks when the user is available."""
+    """Checks the user's busy slots and suggests free periods."""
     service = authenticate_calendar()
 
-    now = datetime.datetime.utcnow().isoformat() + 'Z'
-    end_time = (datetime.datetime.utcnow() + datetime.timedelta(days=7)).isoformat() + 'Z'
+    now = datetime.datetime.utcnow()
+    end_time = now + datetime.timedelta(days=1)
+
+    now_iso = now.isoformat() + 'Z'
+    end_iso = end_time.isoformat() + 'Z'
 
     events_result = service.events().list(
-        calendarId='justyn2s04mahen23@gmail.com', timeMin=now, timeMax=end_time,
-        singleEvents=True, orderBy='startTime'
+        calendarId='justyn2s04mahen23@gmail.com',
+        timeMin=now_iso,
+        timeMax=end_iso,
+        singleEvents=True,
+        orderBy='startTime'
     ).execute()
 
     events = events_result.get('items', [])
 
     if not events:
-        return "Your calendar is free!"
+        response = "You're completely free for the next 24 hours~ Spend all that time with me, okay? ♡\n"
 
-    busy_slots = [event['start'].get('dateTime', event['start'].get('date')) for event in events]
-    return f"You're busy on: \n" + "\n".join(busy_slots)
+    # Sort and parse event times
+    busy_times = []
+    for event in events:
+        start_raw = event['start'].get('dateTime')
+        end_raw = event['end'].get('dateTime')
+        summary = event.get('summary', 'Unnamed Event')
 
+        if start_raw and end_raw:
+            start = datetime.datetime.fromisoformat(start_raw[:-1])  # Remove 'Z'
+            end = datetime.datetime.fromisoformat(end_raw[:-1])
+            busy_times.append((start, end, summary))
 
-def test_google_calendar_functions():
-    print("\n--- Testing Google Calendar Functions ---\n")
+    # Sort events
+    busy_times.sort(key=lambda x: x[0])
 
-    # 1️⃣ Add a single event
-    print("✅ Testing: Adding an event")
-    print(add_event("Meeting with Client", "2025-03-15", "10:00"))
+    # Build free time blocks
+    free_blocks = []
+    current = now
+    for start, end, summary in busy_times:
+        if start > current:
+            free_blocks.append((current, start))
+        current = max(current, end)
 
-    # 2️⃣ Get upcoming events
-    print("\n✅ Testing: Fetching upcoming events")
-    print(get_upcoming_events())
+    if current < end_time:
+        free_blocks.append((current, end_time))
 
-    # 3️⃣ Get events by specific date
-    print("\n✅ Testing: Fetching events on a specific date")
-    print(get_events_by_date("2025-03-15"))
+    # Format response
+    response = "You're busy during:\n"
+    for start, end, summary in busy_times:
+        response += f"- {summary}: {start.strftime('%H:%M')} to {end.strftime('%H:%M')}\n"
 
-    # 4️⃣ Update an existing event
-    print("\n✅ Testing: Updating an event")
-    print(update_event("Meeting with Client", new_date="2025-03-16", new_time="11:00", new_summary="Client Meeting Updated"))
+    response += "\nAnd you're free:\n"
+    for start, end in free_blocks:
+        response += f"- From {start.strftime('%H:%M')} to {end.strftime('%H:%M')}\n"
 
-    # 5️⃣ Delete an event
-    print("\n✅ Testing: Deleting an event")
-    print(delete_event("Client Meeting Updated", "2025-03-16"))
-
-    # 6️⃣ Add an event with custom reminders & color
-    print("\n✅ Testing: Adding an event with multiple reminders and custom color")
-    print(add_event("Dentist Appointment", "2025-03-18", "09:00", 
-                    reminders=[
-                        {'method': 'popup', 'minutes': 15},  # 15 min pop-up
-                        {'method': 'email', 'minutes': 120}  # 2 hours email
-                    ],
-                    color_id=6))  # Light Green
-
-    # 7️⃣ Add a recurring event (every Monday)
-    print("\n✅ Testing: Adding a recurring event")
-    print(add_recurring_event("Weekly Team Meeting", "2025-03-17", "14:00", 
-                              "RRULE:FREQ=WEEKLY;BYDAY=MO"))
-
-    # 8️⃣ Check available time slots
-    print("\n✅ Testing: Checking free time in the next 7 days")
-    print(check_free_time())
-
-    # 9️⃣ Delete past events
-    print("\n✅ Testing: Deleting past events")
-    print(delete_past_events())
-
-    print("\n--- Test Completed Successfully! ---")
-
-
-if __name__ == "__main__":
-    # 6️⃣ Add an event with custom reminders & color
-    print("\n✅ Testing: Adding an event with multiple reminders and custom color")
-    print(add_event("Dentist Appointment", "2025-03-15", "09:00", 
-                    reminders=[
-                        {'method': 'popup', 'minutes': 15},  # 15 min pop-up
-                        {'method': 'email', 'minutes': 120}  # 2 hours email
-                    ],
-                    color_id=6))
+    return response
