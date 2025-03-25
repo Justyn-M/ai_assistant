@@ -123,6 +123,38 @@ class MemoryManager:
         for category, key, value, timestamp in rows:
             summary += f"- [{category}] {key}: {value} (noted at {timestamp})\n"
         return summary.strip()
+    
+    def get_relevant_memory(self, user_input, top_n=10):
+        """
+        Returns a string of relevant memory:
+        - Top N by obsession score
+        - Any memory whose key or value appears in the user_input
+        """
+        doc = nlp(user_input.lower())
+        tokens = {token.text for token in doc if token.is_alpha}
+
+        self.cursor.execute("SELECT key, value, obsession_score FROM memory")
+        all_memory = self.cursor.fetchall()
+
+        # Score and collect matches
+        matches = []
+        for key, value, score in all_memory:
+            key_l = key.lower()
+            value_l = value.lower()
+            if any(word in key_l or word in value_l for word in tokens) or score >= 8:
+                matches.append((key, value, score))
+
+        # Sort by obsession_score descending
+        matches.sort(key=lambda x: x[2], reverse=True)
+
+        if not matches:
+            return ""
+
+        summary = "Here's what I remember right now:\n"
+        for key, value, score in matches[:top_n]:
+            summary += f"- {key}: {value} (Obsession {score})\n"
+        return summary.strip()
+
 
     def forget(self, key):
         self.cursor.execute("DELETE FROM memory WHERE key = ?", (key,))
@@ -248,44 +280,59 @@ def deduplicate_memory(memory):
 
 def extract_memory(messages, memory_manager):
     """
-    Uses GPT to extract memory and stores it via SQLite-based MemoryManager.
+    Uses GPT to extract memory, including an obsession score, and stores it in SQLite.
     """
     conversation_text = "\n".join(
         [f"{msg['role'].capitalize()}: {msg['content']}" for msg in messages if msg['role'] == "user"]
     )
-    
+
     memory_prompt = (
-        "Analyze the following conversation and extract any important user details, such as name, preferences, interests, "
-        "or anything else relevant to remembering about them.\n\n"
+        "Analyze the conversation and extract any important user details, such as name, preferences, interests, "
+        "relationships, or patterns of behavior, etc.\n\n"
+        "If there is nothing to be identified, return blank\n"
+        "For each item identified, return it as a JSON object with 'Key', 'Value', and an 'Obsession' score from 1 to 10.\n"
+        "Use 10 for extremely important things like the user's name or romantic partners.\n\n"
+        
         f"{conversation_text}\n\n"
-        "Return the information in a structured JSON format like this:\n"
-        '{ "Memory": [ { "Key": "Value" }, { "Key": "Value" } ] }'
+        "Respond ONLY in JSON using this format:\n"
+        '{ "Memory": [ { "Key": "Name", "Value": "<Value>", "Obsession": <obsession score> } ] }'
     )
 
     temp_messages = [
-        {"role": "system", "content": "You are an assistant that extracts important information for memory retention."},
+        {"role": "system", "content": "You are a helpful assistant that extracts important memory-worthy facts with a priority rating."},
         {"role": "user", "content": memory_prompt}
     ]
-    
+
     try:
         response = openai.ChatCompletion.create(
             model="gpt-3.5-turbo",
             messages=temp_messages,
-            max_tokens=250,
+            max_tokens=300,
             temperature=0.3
         )
         extracted_text = response['choices'][0]['message']['content'].strip()
         extracted_data = json.loads(extracted_text)
 
         if "Memory" in extracted_data:
-            for item in extracted_data["Memory"]:
-                for key, value in item.items():
-                    memory_manager.remember("GPT", key, value)
+            memory_items = extracted_data["Memory"]
+
+            # Ignore if GPT returns an empty list or filler data
+            if not memory_items or not any(item.get("Key") and item.get("Value") for item in memory_items):
+                print("[DEBUG] GPT memory response was empty or non-meaningful.")
+                return
+
+            for item in memory_items:
+                key = item.get("Key")
+                value = item.get("Value")
+                obsession_score = float(item.get("Obsession", 0))
+                if key and value:
+                    memory_manager.remember("GPT", key, value, obsession_score)
 
     except json.JSONDecodeError:
-        print("[DEBUG] Error parsing extracted memory.")
+        print("[DEBUG] Error parsing extracted memory JSON.")
     except Exception as e:
         print(f"[DEBUG] Exception during memory extraction: {e}")
+
 
 
 def retrieve_memory(memory):
@@ -856,7 +903,7 @@ def detect_calendar_intent(user_input):
         summary = cleaned_summary
 
     # === Debug output ===
-    print(f"[DEBUG] Intent: {detected_intent}, Summary: {summary}, Date: {date_str}, Time: {time_str}, Recurrence: {recurrence_rule}")
+    #print(f"[DEBUG] Intent: {detected_intent}, Summary: {summary}, Date: {date_str}, Time: {time_str}, Recurrence: {recurrence_rule}")
 
     # === Return intent and extracted data ===
     if detected_intent == "add_event" and summary and date_str and time_str:
@@ -876,7 +923,7 @@ def detect_calendar_intent(user_input):
     elif detected_intent == "free_time":
         return {"intent": "free_time", "details": ()}
 
-    print("[DEBUG] Intent detected but not all required details were extracted.")
+    #print("[DEBUG] Intent detected but not all required details were extracted.")
     return None
 
 
@@ -1006,11 +1053,6 @@ def main():
     character_message = initialize_character()
     messages = [{"role": "system", "content": character_message}]
 
-    # If there is any remembered info, add it to the system context.
-    remembered = memory_manager.get_memory_summary()
-    if remembered:
-        messages.append({"role": "system", "content": f"Persistent Memory:\n{remembered}"})
-
     last_assistant_response = ""
     is_follow_up = False
     follow_up_count = 0
@@ -1101,6 +1143,12 @@ def main():
             was_away = user_is_away
             user_is_away = is_user_away(user_input)
             messages.append({"role": "user", "content": user_input})
+
+            relevant_memory = memory_manager.get_relevant_memory(user_input)
+            if relevant_memory:
+                messages.append({"role": "system", "content": f"Persistent Memory:\n{relevant_memory}"})
+
+
             extract_memory(messages, memory_manager)
             check_and_manage_tokens(messages)
             if user_is_away and not was_away:
