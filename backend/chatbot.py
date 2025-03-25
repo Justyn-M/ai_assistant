@@ -68,6 +68,7 @@ CHARACTER_PROFILE = {
 # Introduction message
 print("AI Chatbot (type 'exit' to quit)")
 
+# ------------------------- Persistent Memory Class & Functions -------------------------
 # Memory Class
 class MemoryManager:
     def __init__(self, db_path="memory.db"):
@@ -167,117 +168,6 @@ class MemoryManager:
     def close(self):
         self.conn.close()
 
-# ------------------------- Persistent Memory Functions -------------------------
-
-def load_memory():
-    """Load memory from a JSON file. If not present or error occurs, start with empty memory."""
-    if os.path.exists(MEMORY_FILE):
-        try:
-            with open(MEMORY_FILE, "r", encoding="utf-8") as file:
-                return json.load(file)
-        except (json.JSONDecodeError, FileNotFoundError):
-            print("[DEBUG] Error loading memory, starting fresh.")
-    return {"Memory": []}
-
-def save_memory(memory):
-    """Save the current memory dictionary to a JSON file."""
-    try:
-        with open(MEMORY_FILE, "w", encoding="utf-8") as file:
-            json.dump(memory, file, indent=2)
-    except Exception as e:
-        print(f"[DEBUG] Error saving memory: {e}")
-
-def normalize_val(value):
-    """
-    Normalize a value for duplicate checking.
-    If the value is a string, trim and lowercase it.
-    If it's a list with one string element, return that normalized string.
-    For a list with multiple strings, return a tuple of normalized strings.
-    Otherwise, return the value as is.
-    """
-    if isinstance(value, str):
-        return value.strip().lower()
-    elif isinstance(value, list):
-        if len(value) == 1 and isinstance(value[0], str):
-            return value[0].strip().lower()
-        else:
-            return tuple(sorted(v.strip().lower() if isinstance(v, str) else v for v in value))
-    else:
-        return value
-
-def clean_memory(memory):
-    """
-    Remove memory entries with unknown values and remove duplicates based solely on normalization.
-    Known unknown values are: "not provided" and "unknown" (case insensitive).
-    """
-    unknown_values = {"not provided", "unknown"}
-    cleaned = []
-    seen = set()
-
-    for entry in memory.get("Memory", []):
-        # Process dictionary entries only.
-        if isinstance(entry, dict):
-            # Special handling if the entry uses keys "Key" and "Value"
-            if set(entry.keys()) == {"Key", "Value"}:
-                key = entry["Key"]
-                value = entry["Value"]
-                norm_key = key.strip().lower() if isinstance(key, str) else key
-                norm_value = normalize_val(value)
-                if isinstance(norm_value, str) and norm_value in unknown_values:
-                    continue
-                if (norm_key, norm_value) in seen:
-                    continue
-                seen.add((norm_key, norm_value))
-                cleaned.append({key: value})
-            else:
-                # For normal one-key dictionaries.
-                for key, value in entry.items():
-                    norm_key = key.strip().lower() if isinstance(key, str) else key
-                    norm_value = normalize_val(value)
-                    # Skip this key–value if the value is unknown.
-                    if isinstance(norm_value, str) and norm_value in unknown_values:
-                        continue
-                    if (norm_key, norm_value) in seen:
-                        continue
-                    seen.add((norm_key, norm_value))
-                    cleaned.append({key: value})
-    memory["Memory"] = cleaned
-    return memory
-
-def deduplicate_memory(memory):
-    """
-    Call ChatGPT to deduplicate and merge entries in the memory.
-    In particular, if multiple entries refer to the same concept (e.g., "User" and "Name"),
-    or if there are multiple entries for the same key (e.g., multiple "Intent" entries),
-    then keep only the most recent or most specific entry.
-    """
-    try:
-        prompt = (
-            "You are a memory deduplication assistant. Your task is to remove duplicate or outdated memory entries "
-            "from the provided JSON. Duplicate entries are those that refer to the same concept, such as 'User' and 'Name', or "
-            "multiple entries with the same key (e.g., multiple 'Intent' keys). If duplicates exist, keep the most recent or more specific entry. "
-            "For example, if one entry is {'User': 'Anonymous'} and another is {'Name': 'Justyn'}, assume that 'Name' is more specific "
-            "and retain only {'Name': 'Justyn'}. Also, if multiple entries for the same key exist (such as 'Intent'), keep only the entry that appears last in the list. \n\n"
-            "Here is the JSON memory input:\n\n"
-            f"{json.dumps(memory, indent=2)}\n\n"
-            "Return only the cleaned JSON in the exact same format (with key 'Memory' and an array of objects), and nothing else."
-        )
-        response = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",
-            messages=[
-                {"role": "system", "content": "You are a memory deduplication assistant."},
-                {"role": "user", "content": prompt}
-            ],
-            max_tokens=500,
-            temperature=0.0,
-        )
-        cleaned_text = response['choices'][0]['message']['content'].strip()
-        cleaned_memory = json.loads(cleaned_text)
-        return cleaned_memory
-    except Exception as e:
-        print(f"[DEBUG] Exception in deduplicate_memory: {e}")
-        return memory
-
 def extract_memory(messages, memory_manager):
     """
     Uses GPT to extract memory, including an obsession score, and stores it in SQLite.
@@ -332,20 +222,10 @@ def extract_memory(messages, memory_manager):
         print("[DEBUG] Error parsing extracted memory JSON.")
     except Exception as e:
         print(f"[DEBUG] Exception during memory extraction: {e}")
-
-
-
-def retrieve_memory(memory):
-    """Return a formatted string of all important user details stored in memory."""
-    if not memory["Memory"]:
-        return ""
-    
-    memory_text = "Here are some important things I remember about you:\n"
-    for item in memory["Memory"]:
-        for key, value in item.items():
-            memory_text += f"- {key}: {value}\n"
-    
-    return memory_text.strip()
+        
+# Legacy memory functions removed:
+# - deduplicate_memory, clean_memory, retrieve_memory, load_memory, save_memory
+# All replaced by SQLite + GPT-based memory extraction & injection
 
 # ------------------------- End of Memory Functions -------------------------
 
