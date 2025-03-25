@@ -19,6 +19,7 @@ import dateparser
 #memory imports
 import sqlite3
 import datetime
+import inflect
 
 # Importing Files
 import rss_reader
@@ -33,6 +34,9 @@ load_dotenv()
 
 # Load SpaCy
 nlp = spacy.load("en_core_web_sm")
+
+# Load inflect
+p = inflect.engine()
 
 # Setting up OpenAI API Key
 openai.api_key = os.getenv("OPENAI_API_KEY")
@@ -89,7 +93,14 @@ class MemoryManager:
         ''')
         self.conn.commit()
 
+    def normalize_key(self, key):
+        key = key.strip().lower()
+        if p.singular_noun(key):  # Converts "hobbies" → "hobby"
+            key = p.singular_noun(key)
+        return key.capitalize()  # For display
+
     def remember(self, category, key, value, obsession_score=0):
+        key = self.normalize_key(key)
         timestamp = datetime.datetime.utcnow().isoformat()
 
         UNIQUE_KEYS = {"Name", "Birthday", "Partner", "Pronouns", "Location"}
@@ -154,27 +165,39 @@ class MemoryManager:
         return summary.strip()
     
     def get_relevant_memory(self, user_input, top_n=10):
-        """
-        Returns a string of relevant memory:
-        - Top N by obsession score
-        - Any memory whose key or value appears in the user_input
-        """
         doc = nlp(user_input.lower())
         tokens = {token.text for token in doc if token.is_alpha}
+
+        UNIQUE_KEYS = {"Name", "Birthday", "Partner", "Pronouns", "Location"}
 
         self.cursor.execute("SELECT key, value, obsession_score FROM memory")
         all_memory = self.cursor.fetchall()
 
-        # Score and collect matches
         matches = []
         for key, value, score in all_memory:
-            key_l = key.lower()
+            normalized_key = self.normalize_key(key)
             value_l = value.lower()
-            if any(word in key_l or word in value_l for word in tokens) or score >= 8:
-                matches.append((key, value, score))
 
-        # Sort by obsession_score descending
-        matches.sort(key=lambda x: x[2], reverse=True)
+            is_relevant = any(word in normalized_key.lower() or word in value_l for word in tokens)
+            is_high_priority = score >= 8
+
+            if is_relevant or is_high_priority:
+                matches.append((normalized_key, value, score))
+
+                # 🔒 Prevent score bump on singleton keys
+                if is_relevant and key not in UNIQUE_KEYS:
+                    # Fetch current score
+                    self.cursor.execute("SELECT obsession_score FROM memory WHERE key = ? AND value = ?", (key, value))
+                    current_score = self.cursor.fetchone()
+                    if current_score:
+                        current_score = current_score[0]
+                        new_score = min(current_score + 0.2, 10)
+                        self.cursor.execute(
+                            "UPDATE memory SET obsession_score = ? WHERE key = ? AND value = ?",
+                            (new_score, key, value)
+                        )
+
+        self.conn.commit()
 
         if not matches:
             return ""
@@ -236,7 +259,7 @@ def extract_memory(messages, memory_manager):
 
             # Ignore if GPT returns an empty list or filler data
             if not memory_items or not any(item.get("Key") and item.get("Value") for item in memory_items):
-                print("[DEBUG] GPT memory response was empty or non-meaningful.")
+                #print("[DEBUG] GPT memory response was empty or non-meaningful.")
                 return
 
             for item in memory_items:
