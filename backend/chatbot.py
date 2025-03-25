@@ -88,6 +88,7 @@ class MemoryManager:
                 key TEXT,
                 value TEXT,
                 timestamp TEXT,
+                last_used TEXT,
                 obsession_score REAL DEFAULT 0
             )
         ''')
@@ -102,49 +103,54 @@ class MemoryManager:
     def remember(self, category, key, value, obsession_score=0):
         key = self.normalize_key(key)
         timestamp = datetime.datetime.utcnow().isoformat()
-
         UNIQUE_KEYS = {"Name", "Birthday", "Partner", "Pronouns", "Location"}
 
         # Check if exact key-value pair already exists
         self.cursor.execute("SELECT id FROM memory WHERE key = ? AND value = ?", (key, value))
         if self.cursor.fetchone():
-            return None  # Already stored
+            # Entry already exists — just update last_used
+            last_used = datetime.datetime.utcnow().isoformat()
+            self.cursor.execute("UPDATE memory SET last_used = ? WHERE key = ? AND value = ?", (last_used, key, value))
+            self.conn.commit()
+            return None
 
-        # Check if key already exists
+        # Check if key exists (could be unique or non-unique)
         self.cursor.execute("SELECT id, value FROM memory WHERE key = ?", (key,))
         existing = self.cursor.fetchone()
 
         if existing:
             old_id, old_value = existing
-
             if key in UNIQUE_KEYS:
                 if old_value != value:
-                    # Overwrite and trigger jealous reaction
+                    # Overwrite and trigger jealousy
                     self.cursor.execute(
-                        "UPDATE memory SET value = ?, timestamp = ?, obsession_score = ? WHERE id = ?",
-                        (value, timestamp, obsession_score, old_id)
+                        "UPDATE memory SET value = ?, timestamp = ?, obsession_score = ?, last_used = ? WHERE id = ?",
+                        (value, timestamp, obsession_score, timestamp, old_id)
                     )
                     self.conn.commit()
                     return f"jealous_overwrite:{key}:{old_value}→{value}"
                 else:
-                    return None  # Same value, no change needed
+                    # Same value, update timestamp
+                    self.cursor.execute("UPDATE memory SET last_used = ? WHERE id = ?", (timestamp, old_id))
+                    self.conn.commit()
+                    return None
 
-            else:
-                # Key exists but not unique → insert new value alongside
-                self.cursor.execute(
-                    "INSERT INTO memory (category, key, value, timestamp, obsession_score) VALUES (?, ?, ?, ?, ?)",
-                    (category, key, value, timestamp, obsession_score)
-                )
-                self.conn.commit()
-                return None
+            # Non-unique key → insert new
+            self.cursor.execute(
+                "INSERT INTO memory (category, key, value, timestamp, obsession_score, last_used) VALUES (?, ?, ?, ?, ?, ?)",
+                (category, key, value, timestamp, obsession_score, timestamp)
+            )
+            self.conn.commit()
+            return None
 
-        # Key does not exist at all → insert new memory
+        # Key doesn't exist at all → new entry
         self.cursor.execute(
-            "INSERT INTO memory (category, key, value, timestamp, obsession_score) VALUES (?, ?, ?, ?, ?)",
-            (category, key, value, timestamp, obsession_score)
+            "INSERT INTO memory (category, key, value, timestamp, obsession_score, last_used) VALUES (?, ?, ?, ?, ?, ?)",
+            (category, key, value, timestamp, obsession_score, timestamp)
         )
         self.conn.commit()
         return None
+
 
 
     def get_memory_summary(self, limit=10):
@@ -167,7 +173,6 @@ class MemoryManager:
     def get_relevant_memory(self, user_input, top_n=10):
         doc = nlp(user_input.lower())
         tokens = {token.text for token in doc if token.is_alpha}
-
         UNIQUE_KEYS = {"Name", "Birthday", "Partner", "Pronouns", "Location"}
 
         self.cursor.execute("SELECT key, value, obsession_score FROM memory")
@@ -184,18 +189,21 @@ class MemoryManager:
             if is_relevant or is_high_priority:
                 matches.append((normalized_key, value, score))
 
-                # 🔒 Prevent score bump on singleton keys
-                if is_relevant and key not in UNIQUE_KEYS:
-                    # Fetch current score
+                # Only non-unique keys get obsession bumps and last_used update
+                if is_relevant and normalized_key not in UNIQUE_KEYS:
+                    # Bump obsession score (capped at 10)
                     self.cursor.execute("SELECT obsession_score FROM memory WHERE key = ? AND value = ?", (key, value))
                     current_score = self.cursor.fetchone()
                     if current_score:
-                        current_score = current_score[0]
-                        new_score = min(current_score + 0.2, 10)
+                        new_score = min(current_score[0] + 0.2, 10)
                         self.cursor.execute(
                             "UPDATE memory SET obsession_score = ? WHERE key = ? AND value = ?",
                             (new_score, key, value)
                         )
+
+                # Update last_used regardless
+                last_used = datetime.datetime.utcnow().isoformat()
+                self.cursor.execute("UPDATE memory SET last_used = ? WHERE key = ? AND value = ?", (last_used, key, value))
 
         self.conn.commit()
 
@@ -206,6 +214,33 @@ class MemoryManager:
         for key, value, score in matches[:top_n]:
             summary += f"- {key}: {value} (Obsession {score})\n"
         return summary.strip()
+
+
+    def decay_memory_scores(self, decay_amount=0.1, decay_threshold_minutes=60):
+        now = datetime.datetime.utcnow()
+        UNIQUE_KEYS = {"Name", "Birthday", "Partner", "Pronouns", "Location"}
+
+        self.cursor.execute("SELECT id, key, obsession_score, last_used FROM memory")
+        all_memory = self.cursor.fetchall()
+
+        for mem_id, key, score, last_used in all_memory:
+            if key in UNIQUE_KEYS or score <= 0:
+                continue
+
+            if last_used:
+                try:
+                    last_dt = datetime.datetime.fromisoformat(last_used)
+                    minutes_since_used = (now - last_dt).total_seconds() / 60
+                    if minutes_since_used >= decay_threshold_minutes:
+                        new_score = max(score - decay_amount, 0)
+                        self.cursor.execute(
+                            "UPDATE memory SET obsession_score = ? WHERE id = ?",
+                            (new_score, mem_id)
+                        )
+                except Exception as e:
+                    print(f"[DEBUG] Failed to parse last_used: {e}")
+
+        self.conn.commit()
 
 
     def forget(self, key):
@@ -1035,6 +1070,8 @@ def main():
             if user_input.lower() == "exit":
                 print("Goodbye! Have a great day!")
                 break
+
+            memory_manager.decay_memory_scores()
 
             # Check for currency conversion request first.
             currency_response = process_currency_conversion(user_input)
