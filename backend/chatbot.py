@@ -16,6 +16,10 @@ import calendar
 import spacy
 import dateparser
 
+#memory imports
+import sqlite3
+import datetime
+
 # Importing Files
 import rss_reader
 
@@ -63,6 +67,73 @@ CHARACTER_PROFILE = {
 
 # Introduction message
 print("AI Chatbot (type 'exit' to quit)")
+
+# Memory Class
+class MemoryManager:
+    def __init__(self, db_path="memory.db"):
+        self.conn = sqlite3.connect(db_path)
+        self.cursor = self.conn.cursor()
+        self._create_table()
+
+    def _create_table(self):
+        self.cursor.execute('''
+            CREATE TABLE IF NOT EXISTS memory (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                category TEXT,
+                key TEXT,
+                value TEXT,
+                timestamp TEXT,
+                obsession_score REAL DEFAULT 0
+            )
+        ''')
+        self.conn.commit()
+
+    def remember(self, category, key, value, obsession_score=0):
+        timestamp = datetime.datetime.utcnow().isoformat()
+
+        # Check if memory with same key already exists
+        self.cursor.execute("SELECT id FROM memory WHERE key = ?", (key,))
+        row = self.cursor.fetchone()
+
+        if row:
+            self.cursor.execute(
+                "UPDATE memory SET value = ?, timestamp = ?, obsession_score = ? WHERE id = ?",
+                (value, timestamp, obsession_score, row[0])
+            )
+        else:
+            self.cursor.execute(
+                "INSERT INTO memory (category, key, value, timestamp, obsession_score) VALUES (?, ?, ?, ?, ?)",
+                (category, key, value, timestamp, obsession_score)
+            )
+        self.conn.commit()
+
+    def get_memory_summary(self, limit=10):
+        self.cursor.execute('''
+            SELECT category, key, value, timestamp
+            FROM memory
+            ORDER BY timestamp DESC
+            LIMIT ?
+        ''', (limit,))
+        rows = self.cursor.fetchall()
+
+        if not rows:
+            return "I don’t remember anything yet... tell me more about yourself~ 💔"
+
+        summary = "Here’s what I remember about you so far:\n"
+        for category, key, value, timestamp in rows:
+            summary += f"- [{category}] {key}: {value} (noted at {timestamp})\n"
+        return summary.strip()
+
+    def forget(self, key):
+        self.cursor.execute("DELETE FROM memory WHERE key = ?", (key,))
+        self.conn.commit()
+
+    def get_all_memory(self):
+        self.cursor.execute("SELECT category, key, value, timestamp, obsession_score FROM memory")
+        return self.cursor.fetchall()
+
+    def close(self):
+        self.conn.close()
 
 # ------------------------- Persistent Memory Functions -------------------------
 
@@ -175,11 +246,9 @@ def deduplicate_memory(memory):
         print(f"[DEBUG] Exception in deduplicate_memory: {e}")
         return memory
 
-def extract_memory(messages, memory):
+def extract_memory(messages, memory_manager):
     """
-    Analyze the conversation (user messages only) and extract important details.
-    Uses GPT-3.5-turbo to output JSON which is then parsed and merged into the persistent memory.
-    After merging, it cleans and deduplicates the memory.
+    Uses GPT to extract memory and stores it via SQLite-based MemoryManager.
     """
     conversation_text = "\n".join(
         [f"{msg['role'].capitalize()}: {msg['content']}" for msg in messages if msg['role'] == "user"]
@@ -210,18 +279,14 @@ def extract_memory(messages, memory):
 
         if "Memory" in extracted_data:
             for item in extracted_data["Memory"]:
-                if item not in memory["Memory"]:
-                    memory["Memory"].append(item)
-            # First clean out unknown values and obvious duplicates.
-            clean_memory(memory)
-            # Then ask ChatGPT to deduplicate and merge similar entries.
-            updated_memory = deduplicate_memory(memory)
-            memory["Memory"] = updated_memory.get("Memory", memory["Memory"])
-            save_memory(memory)
+                for key, value in item.items():
+                    memory_manager.remember("GPT", key, value)
+
     except json.JSONDecodeError:
         print("[DEBUG] Error parsing extracted memory.")
     except Exception as e:
         print(f"[DEBUG] Exception during memory extraction: {e}")
+
 
 def retrieve_memory(memory):
     """Return a formatted string of all important user details stored in memory."""
@@ -936,13 +1001,13 @@ def main():
     global last_assistant_response, is_follow_up, follow_up_count, user_is_away
 
     # Load persistent memory
-    memory = load_memory()
+    memory_manager = MemoryManager()
 
     character_message = initialize_character()
     messages = [{"role": "system", "content": character_message}]
 
     # If there is any remembered info, add it to the system context.
-    remembered = retrieve_memory(memory)
+    remembered = memory_manager.get_memory_summary()
     if remembered:
         messages.append({"role": "system", "content": f"Persistent Memory:\n{remembered}"})
 
@@ -965,7 +1030,7 @@ def main():
 
             if user_input is None:
                 if not user_is_away and follow_up_count < len(follow_up_intervals):
-                    send_follow_up(messages, memory)
+                    send_follow_up(messages, memory_manager)
                 continue
 
             follow_up_count = 0
@@ -1036,7 +1101,7 @@ def main():
             was_away = user_is_away
             user_is_away = is_user_away(user_input)
             messages.append({"role": "user", "content": user_input})
-            extract_memory(messages, memory)
+            extract_memory(messages, memory_manager)
             check_and_manage_tokens(messages)
             if user_is_away and not was_away:
                 response = openai.ChatCompletion.create(
@@ -1049,7 +1114,7 @@ def main():
                 print(f"Yandere AI: {assistant_response}")
                 messages.append({"role": "assistant", "content": assistant_response})
                 last_assistant_response = assistant_response
-                extract_memory(messages, memory)
+                extract_memory(messages, memory_manager)
                 continue
 
         try:
@@ -1064,7 +1129,7 @@ def main():
                 print(f"Yandere AI: {assistant_response}")
                 messages.append({"role": "assistant", "content": assistant_response})
                 last_assistant_response = assistant_response
-                extract_memory(messages, memory)
+                extract_memory(messages, memory_manager)
         except AuthenticationError:
             print("Error: Invalid API key. Please check your settings.")
         except RateLimitError:
