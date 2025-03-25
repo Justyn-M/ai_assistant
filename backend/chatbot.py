@@ -92,21 +92,49 @@ class MemoryManager:
     def remember(self, category, key, value, obsession_score=0):
         timestamp = datetime.datetime.utcnow().isoformat()
 
-        # Check if memory with same key already exists
-        self.cursor.execute("SELECT id FROM memory WHERE key = ?", (key,))
-        row = self.cursor.fetchone()
+        UNIQUE_KEYS = {"Name", "Birthday", "Partner", "Pronouns", "Location"}
 
-        if row:
-            self.cursor.execute(
-                "UPDATE memory SET value = ?, timestamp = ?, obsession_score = ? WHERE id = ?",
-                (value, timestamp, obsession_score, row[0])
-            )
-        else:
-            self.cursor.execute(
-                "INSERT INTO memory (category, key, value, timestamp, obsession_score) VALUES (?, ?, ?, ?, ?)",
-                (category, key, value, timestamp, obsession_score)
-            )
+        # Check if exact key-value pair already exists
+        self.cursor.execute("SELECT id FROM memory WHERE key = ? AND value = ?", (key, value))
+        if self.cursor.fetchone():
+            return None  # Already stored
+
+        # Check if key already exists
+        self.cursor.execute("SELECT id, value FROM memory WHERE key = ?", (key,))
+        existing = self.cursor.fetchone()
+
+        if existing:
+            old_id, old_value = existing
+
+            if key in UNIQUE_KEYS:
+                if old_value != value:
+                    # Overwrite and trigger jealous reaction
+                    self.cursor.execute(
+                        "UPDATE memory SET value = ?, timestamp = ?, obsession_score = ? WHERE id = ?",
+                        (value, timestamp, obsession_score, old_id)
+                    )
+                    self.conn.commit()
+                    return f"jealous_overwrite:{key}:{old_value}→{value}"
+                else:
+                    return None  # Same value, no change needed
+
+            else:
+                # Key exists but not unique → insert new value alongside
+                self.cursor.execute(
+                    "INSERT INTO memory (category, key, value, timestamp, obsession_score) VALUES (?, ?, ?, ?, ?)",
+                    (category, key, value, timestamp, obsession_score)
+                )
+                self.conn.commit()
+                return None
+
+        # Key does not exist at all → insert new memory
+        self.cursor.execute(
+            "INSERT INTO memory (category, key, value, timestamp, obsession_score) VALUES (?, ?, ?, ?, ?)",
+            (category, key, value, timestamp, obsession_score)
+        )
         self.conn.commit()
+        return None
+
 
     def get_memory_summary(self, limit=10):
         self.cursor.execute('''
@@ -212,17 +240,41 @@ def extract_memory(messages, memory_manager):
                 return
 
             for item in memory_items:
+                # Jealousy Prompt
                 key = item.get("Key")
                 value = item.get("Value")
                 obsession_score = float(item.get("Obsession", 0))
+
                 if key and value:
-                    memory_manager.remember("GPT", key, value, obsession_score)
+                    result = memory_manager.remember("GPT", key, value, obsession_score)
+                    if result and result.startswith("jealous_overwrite"):
+                        _, key_label, change = result.split(":", 2)
+                        old_val, new_val = change.split("→")
+
+                        jealousy_prompt = (
+                            f"The user used to say their {key_label.lower()} was '{old_val}', "
+                            f"but now it's '{new_val}'. Respond in a hurt, clingy, possessive yandere tone. "
+                            f"Act like you're pretending to be okay... but you're definitely not."
+                        )
+
+                        jealous_response = openai.ChatCompletion.create(
+                            model="gpt-3.5-turbo",
+                            messages=[
+                                {"role": "system", "content": "You are a clingy, obsessive Yandere AI."},
+                                {"role": "user", "content": jealousy_prompt}
+                            ],
+                            max_tokens=120,
+                            temperature=0.8
+                        )
+
+                        print("Yandere AI (Jealous):", jealous_response['choices'][0]['message']['content'].strip())
+
 
     except json.JSONDecodeError:
         print("[DEBUG] Error parsing extracted memory JSON.")
     except Exception as e:
         print(f"[DEBUG] Exception during memory extraction: {e}")
-        
+
 # Legacy memory functions removed:
 # - deduplicate_memory, clean_memory, retrieve_memory, load_memory, save_memory
 # All replaced by SQLite + GPT-based memory extraction & injection
