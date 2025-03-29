@@ -346,7 +346,7 @@ def extract_memory(messages, memory_manager):
                         )
 
                         jealous_response = openai.ChatCompletion.create(
-                            model="gpt-3.5-turbo",
+                            model="gpt-4o",
                             messages=[
                                 {"role": "system", "content": "You are a clingy, obsessive Yandere AI."},
                                 {"role": "user", "content": jealousy_prompt}
@@ -377,7 +377,7 @@ def initialize_character():
     )
     return system_message
 
-def num_tokens_from_messages(messages, model="gpt-3.5-turbo"):
+def num_tokens_from_messages(messages, model="gpt-4o"):
     """
     Calculate the number of tokens used by a list of messages for gpt-3.5-turbo.
     This logic is based on OpenAI's recommendations from their documentation.
@@ -387,7 +387,7 @@ def num_tokens_from_messages(messages, model="gpt-3.5-turbo"):
     except KeyError:
         encoding = tiktoken.get_encoding("cl100k_base")
 
-    if model.startswith("gpt-3.5-turbo"):
+    if model.startswith("gpt-4o"):
         tokens_per_message = 3
         tokens_per_name = 1
     else:
@@ -421,7 +421,7 @@ def summarize_conversation(messages):
         {"role": "user", "content": prompt}
     ]
     response = openai.ChatCompletion.create(
-        model="gpt-3.5-turbo",
+        model="4o",
         messages=temp_messages,
         max_tokens=200,
         temperature=0.3
@@ -430,7 +430,7 @@ def summarize_conversation(messages):
     return summary
 
 def check_and_manage_tokens(messages):
-    current_tokens = num_tokens_from_messages(messages, model="gpt-3.5-turbo")
+    current_tokens = num_tokens_from_messages(messages, model="gpt-4o")
     if current_tokens > 2000:
         print("[DEBUG] Token limit exceeded. Summarizing and pruning messages...")
         last_4 = messages[-4:] if len(messages) > 10 else messages[:]
@@ -458,7 +458,7 @@ def summarize_and_detect_tone(messages):
     )
 
     response = openai.ChatCompletion.create(
-        model="gpt-3.5-turbo",
+        model="gpt-4o",
         messages=[
             {"role": "system", "content": "You are a helpful assistant."},
             {"role": "user", "content": tone_detection_prompt}
@@ -518,7 +518,7 @@ def send_follow_up(messages, memory):
 
     check_and_manage_tokens(messages)
     response = openai.ChatCompletion.create(
-        model="gpt-3.5-turbo",
+        model="gpt-4o",
         messages=[
             {"role": "system", "content": "You are a helpful assistant."},
             {"role": "user", "content": follow_up_prompt},
@@ -532,7 +532,7 @@ def send_follow_up(messages, memory):
     while follow_up_response == last_assistant_response:
         check_and_manage_tokens(messages)
         response = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",
+            model="gpt-4o",
             messages=messages + [{"role": "user", "content": "Generate a new follow-up"}],
             max_tokens=100,
             temperature=0.8,
@@ -598,7 +598,7 @@ def is_user_away(message):
     ]
     
     response = openai.ChatCompletion.create(
-        model="gpt-3.5-turbo",
+        model="gpt-4o",
         messages=temp_messages,
         max_tokens=1,
         temperature=0.0
@@ -689,7 +689,7 @@ def weather_detection(message):
 
     try:
         response = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",
+            model="gpt-4o",
             messages=[{"role": "user", "content": prompt}],
             max_tokens=50,
             temperature=0.3
@@ -752,7 +752,7 @@ def get_weather(user_message):
 
         # Send request to OpenAI
         response = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",
+            model="gpt-4o",
             messages=[
                 {"role": "system", "content": "You are a helpful Yandere AI assistant."},
                 {"role": "user", "content": prompt}
@@ -822,7 +822,7 @@ def humanize_currency_response(raw_data, details, exchange_info_str):
 
     # Send request to OpenAI
     response = openai.ChatCompletion.create(
-        model="gpt-3.5-turbo",
+        model="gpt-4o",
         messages=[
             {"role": "system", "content": "You are a helpful Yandere AI assistant."},
             {"role": "user", "content": prompt}
@@ -1049,7 +1049,7 @@ def humanize_calendar_response(action_type, context_info):
 
     try:
         response = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",
+            model="gpt-4o",
             messages=[
                 {"role": "system", "content": "You are a helpful Yandere AI assistant."},
                 {"role": "user", "content": prompt}
@@ -1175,7 +1175,7 @@ def main():
             check_and_manage_tokens(messages)
             if user_is_away and not was_away:
                 response = openai.ChatCompletion.create(
-                    model="gpt-3.5-turbo",
+                    model="gpt-4o",
                     messages=messages,
                     max_tokens=150,
                     temperature=0.7
@@ -1190,7 +1190,7 @@ def main():
         try:
             if not user_is_away:
                 response = openai.ChatCompletion.create(
-                    model="gpt-3.5-turbo",
+                    model="gpt-4o",
                     messages=messages,
                     max_tokens=150,
                     temperature=0.7
