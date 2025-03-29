@@ -6,7 +6,6 @@ import msvcrt  # For custom user input logic
 import tiktoken
 import json  # For persistent memory
 import re
-import feedparser
 import requests
 import datetime
 import calendar
@@ -22,8 +21,6 @@ import datetime
 import inflect
 
 # Importing Files
-import rss_reader
-
 from dotenv import load_dotenv
 from openai.error import AuthenticationError, RateLimitError
 from exchange import get_exchange_rate, format_exchange_info
@@ -1148,15 +1145,6 @@ def main():
                 print("Yandere AI:", response)
                 messages.append({"role": "assistant", "content": response})
                 continue  # Skip normal AI response
-
-
-
-            # Check if user is asking for RSS news
-            rss_response = rss_reader.display_rss_feed(user_input)
-            if rss_response and "Could not understand" not in rss_response:
-                print(f"Yandere AI (RSS News):\n{rss_response}")
-                messages.append({"role": "assistant", "content": rss_response})
-                continue
 
             weather_response = get_weather(user_input)
             if weather_response:
