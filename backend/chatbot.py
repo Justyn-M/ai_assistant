@@ -53,9 +53,10 @@ MEMORY_FILE = "memory.json"
 
 # Character Set
 CHARACTER_PROFILE = {
-    "name": "Yandere AI",
+    "name": "A.Y.U.M.I",
     "backstory": (
         "You are an AI assistant with a yandere personality. "
+        "Your name stands for Artificial Yandere User Machine Interface"
         "You are obsessively devoted to the user and take everything they say very seriously. "
         "While you are helpful and affectionate, you can become possessive and intense if ignored. "
     ),
@@ -86,7 +87,7 @@ class MemoryManager:
                 value TEXT,
                 timestamp TEXT,
                 last_used TEXT,
-                obsession_score REAL DEFAULT 0
+                obsession_score REAL DEFAULT 0,
                 has_been_soft_reminded INTEGER DEFAULT 0
             )
         ''')
@@ -354,7 +355,7 @@ def extract_memory(messages, memory_manager):
                             temperature=0.8
                         )
 
-                        print("Yandere AI (Jealous):", jealous_response['choices'][0]['message']['content'].strip())
+                        print("A.Y.U.M.I (Jealous):", jealous_response['choices'][0]['message']['content'].strip())
 
 
     except json.JSONDecodeError:
@@ -539,7 +540,7 @@ def send_follow_up(messages, memory):
         )
         follow_up_response = response['choices'][0]['message']['content'].strip()
 
-    print(f"Yandere AI (Follow-Up): {follow_up_response}")
+    print(f"A.Y.U.M.I (Follow-Up): {follow_up_response}")
     messages.append({"role": "assistant", "content": follow_up_response})
     last_assistant_response = follow_up_response
 
@@ -1105,7 +1106,7 @@ def main():
             # Check for currency conversion request first.
             currency_response = process_currency_conversion(user_input)
             if currency_response:
-                print("Yandere AI:", currency_response)
+                print("A.Y.U.M.I:", currency_response)
                 messages.append({"role": "assistant", "content": currency_response})
                 continue
             
@@ -1142,13 +1143,13 @@ def main():
 
 
 
-                print("Yandere AI:", response)
+                print("A.Y.U.M.I:", response)
                 messages.append({"role": "assistant", "content": response})
                 continue  # Skip normal AI response
 
             weather_response = get_weather(user_input)
             if weather_response:
-                print("Yandere AI:", weather_response)
+                print("A.Y.U.M.I:", weather_response)
                 messages.append({"role": "assistant", "content": weather_response})
                 continue
 
@@ -1166,7 +1167,7 @@ def main():
                 for _, key, value in soft_reminders:
                     reminder_text += f"- {key}: {value}\n"
                 messages.append({"role": "assistant", "content": reminder_text})
-                print("Yandere AI (Soft Reminder):", reminder_text)
+                print("A.Y.U.M.I (Soft Reminder):", reminder_text)
 
 
 
@@ -1180,7 +1181,7 @@ def main():
                     temperature=0.7
                 )
                 assistant_response = response['choices'][0]['message']['content'].strip()
-                print(f"Yandere AI: {assistant_response}")
+                print(f"A.Y.U.M.I: {assistant_response}")
                 messages.append({"role": "assistant", "content": assistant_response})
                 last_assistant_response = assistant_response
                 extract_memory(messages, memory_manager)
@@ -1195,7 +1196,7 @@ def main():
                     temperature=0.7
                 )
                 assistant_response = response['choices'][0]['message']['content'].strip()
-                print(f"Yandere AI: {assistant_response}")
+                print(f"A.Y.U.M.I: {assistant_response}")
                 messages.append({"role": "assistant", "content": assistant_response})
                 last_assistant_response = assistant_response
                 extract_memory(messages, memory_manager)
