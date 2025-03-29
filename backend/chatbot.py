@@ -90,6 +90,7 @@ class MemoryManager:
                 timestamp TEXT,
                 last_used TEXT,
                 obsession_score REAL DEFAULT 0
+                has_been_soft_reminded INTEGER DEFAULT 0
             )
         ''')
         self.conn.commit()
@@ -201,6 +202,12 @@ class MemoryManager:
                             (new_score, key, value)
                         )
 
+                        # Reset soft reminder flag since it’s remembered again
+                        self.cursor.execute(
+                            "UPDATE memory SET has_been_soft_reminded = 0 WHERE key = ? AND value = ?",
+                            (key, value)
+                        )
+
                 # Update last_used regardless
                 last_used = datetime.datetime.utcnow().isoformat()
                 self.cursor.execute("UPDATE memory SET last_used = ? WHERE key = ? AND value = ?", (last_used, key, value))
@@ -241,6 +248,31 @@ class MemoryManager:
                     print(f"[DEBUG] Failed to parse last_used: {e}")
 
         self.conn.commit()
+
+    def get_soft_reminders(self, threshold=3):
+        """
+        Returns a list of memory entries with low obsession score (≤ threshold)
+        that haven't yet been softly reminded.
+        """
+        self.cursor.execute('''
+            SELECT id, key, value FROM memory
+            WHERE obsession_score <= ? AND has_been_soft_reminded = 0
+            ORDER BY obsession_score ASC
+        ''', (threshold,))
+        
+        rows = self.cursor.fetchall()
+        if not rows:
+            return []
+
+        # Mark them as reminded so they’re not repeated
+        for mem_id, _, _ in rows:
+            self.cursor.execute(
+                "UPDATE memory SET has_been_soft_reminded = 1 WHERE id = ?",
+                (mem_id,)
+            )
+        self.conn.commit()
+        return rows
+
 
 
     def forget(self, key):
@@ -1139,6 +1171,15 @@ def main():
             relevant_memory = memory_manager.get_relevant_memory(user_input)
             if relevant_memory:
                 messages.append({"role": "system", "content": f"Persistent Memory:\n{relevant_memory}"})
+
+            soft_reminders = memory_manager.get_soft_reminders()
+            if soft_reminders:
+                reminder_text = "Umm... do you still care about these things? 🥺 I feel like you’ve forgotten...\n"
+                for _, key, value in soft_reminders:
+                    reminder_text += f"- {key}: {value}\n"
+                messages.append({"role": "assistant", "content": reminder_text})
+                print("Yandere AI (Soft Reminder):", reminder_text)
+
 
 
             extract_memory(messages, memory_manager)
