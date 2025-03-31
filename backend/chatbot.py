@@ -365,12 +365,17 @@ def extract_memory(messages, memory_manager):
     except Exception as e:
         print(f"[DEBUG] Exception during memory extraction: {e}")
 
+### End of Memory Class ##
 
-def save_last_chat_messages(messages, filepath=CHAT_HISTORY_FILE, limit=5):
+## Other persistant memory functions
+
+# Function ot save last 6 chat messages. 
+def save_last_chat_messages(messages, filepath=CHAT_HISTORY_FILE, limit=6):
     last_msgs = [m for m in messages if m["role"] in ["user", "assistant"]][-limit:]
     with open(filepath, "w", encoding="utf-8") as f:
         json.dump(last_msgs, f, indent=2)
 
+# Function to load chat messages from chat history file
 def load_last_chat_messages(filepath=CHAT_HISTORY_FILE):
     if not os.path.exists(filepath):
         # If the file doesn't exist, create an empty one
@@ -444,7 +449,7 @@ def summarize_conversation(messages):
         {"role": "user", "content": prompt}
     ]
     response = openai.ChatCompletion.create(
-        model="4o",
+        model="gpt-4o",
         messages=temp_messages,
         max_tokens=200,
         temperature=0.3
@@ -1096,10 +1101,45 @@ def main():
     character_message = initialize_character()
     messages = [{"role": "system", "content": character_message}]
 
-    previous = load_last_chat_messages()
-    if previous:
-        messages.append({"role": "system", "content": "Recalling your last conversation with me... 💭"})
-        messages.extend(previous)
+    # Load chat history
+    chat_history = load_last_chat_messages()
+    if chat_history:
+        messages.extend(chat_history)
+
+        # Detect if the user said goodbye last time
+        last_user_message = [m["content"].lower() for m in reversed(chat_history) if m["role"] == "user"]
+        farewells = ["bye", "goodbye", "see you", "talk later", "catch you later", "farewell"]
+
+        user_said_farewell = any(any(f in msg for f in farewells) for msg in last_user_message)
+
+        if not user_said_farewell:
+            yandere_reaction = (
+                "You left me all alone last time... without even saying bye... "
+            )
+            messages.append({"role": "assistant", "content": yandere_reaction})
+
+            # Let Ayumi follow up with a real GPT-powered reaction
+            response = openai.ChatCompletion.create(
+                model="gpt-4o",
+                messages=messages,
+                max_tokens=120,
+                temperature=0.7
+            )
+            assistant_response = response['choices'][0]['message']['content'].strip()
+            print(f"A.Y.U.M.I (Guilt Trip): {assistant_response}")
+            messages.append({"role": "assistant", "content": assistant_response})
+        else:
+            messages.append({"role": "system", "content": "User has returned. Start the conversation again."})
+
+            response = openai.ChatCompletion.create(
+                model="gpt-4o",
+                messages=messages,
+                max_tokens=120,
+                temperature=0.7
+            )
+            assistant_response = response['choices'][0]['message']['content'].strip()
+            print(f"A.Y.U.M.I: {assistant_response}")
+            messages.append({"role": "assistant", "content": assistant_response})
 
     last_assistant_response = ""
     is_follow_up = False
