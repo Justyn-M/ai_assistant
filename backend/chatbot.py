@@ -365,6 +365,27 @@ def extract_memory(messages, memory_manager):
     except Exception as e:
         print(f"[DEBUG] Exception during memory extraction: {e}")
 
+
+def save_last_chat_messages(messages, filepath=CHAT_HISTORY_FILE, limit=5):
+    last_msgs = [m for m in messages if m["role"] in ["user", "assistant"]][-limit:]
+    with open(filepath, "w", encoding="utf-8") as f:
+        json.dump(last_msgs, f, indent=2)
+
+def load_last_chat_messages(filepath=CHAT_HISTORY_FILE):
+    if not os.path.exists(filepath):
+        # If the file doesn't exist, create an empty one
+        with open(filepath, "w", encoding="utf-8") as f:
+            json.dump([], f)
+        return []
+
+    try:
+        with open(filepath, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception as e:
+        print(f"[DEBUG] Failed to load chat history: {e}")
+        return []
+
+
 # Legacy memory functions removed:
 # - deduplicate_memory, clean_memory, retrieve_memory, load_memory, save_memory
 # All replaced by SQLite + GPT-based memory extraction & injection
@@ -1075,6 +1096,11 @@ def main():
     character_message = initialize_character()
     messages = [{"role": "system", "content": character_message}]
 
+    previous = load_last_chat_messages()
+    if previous:
+        messages.append({"role": "system", "content": "Recalling your last conversation with me... 💭"})
+        messages.extend(previous)
+
     last_assistant_response = ""
     is_follow_up = False
     follow_up_count = 0
@@ -1086,6 +1112,7 @@ def main():
             follow_up_count = 0
             user_is_away = is_user_away(user_input)
             if user_input.lower() == "exit":
+                save_last_chat_messages(messages)
                 print("Goodbye! Have a great day!")
                 break
         else:
@@ -1100,6 +1127,7 @@ def main():
             follow_up_count = 0
 
             if user_input.lower() == "exit":
+                save_last_chat_messages(messages)
                 print("Goodbye! Have a great day!")
                 break
 
