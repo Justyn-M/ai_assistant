@@ -25,6 +25,7 @@ from dotenv import load_dotenv
 from openai.error import AuthenticationError, RateLimitError
 from exchange import get_exchange_rate, format_exchange_info
 from google_calendar import *
+from datetime import datetime, UTC
 
 # Load environment variables
 load_dotenv()
@@ -49,7 +50,8 @@ follow_up_intervals = [10, 30, 100, 200]  # Time intervals for follow-ups
 user_is_away = False  # Indicates if the user is currently away
 
 # File for persistent memory
-MEMORY_FILE = "memory.json"
+CHAT_HISTORY_FILE = "chat_history.json"
+
 
 # Character Set
 CHARACTER_PROFILE = {
@@ -101,14 +103,14 @@ class MemoryManager:
 
     def remember(self, category, key, value, obsession_score=0):
         key = self.normalize_key(key)
-        timestamp = datetime.datetime.utcnow().isoformat()
+        timestamp = datetime.now(UTC).isoformat()
         UNIQUE_KEYS = {"Name", "Birthday", "Partner", "Pronouns", "Location"}
 
         # Check if exact key-value pair already exists
         self.cursor.execute("SELECT id FROM memory WHERE key = ? AND value = ?", (key, value))
         if self.cursor.fetchone():
             # Entry already exists — just update last_used
-            last_used = datetime.datetime.utcnow().isoformat()
+            last_used = datetime.now(UTC).isoformat()
             self.cursor.execute("UPDATE memory SET last_used = ? WHERE key = ? AND value = ?", (last_used, key, value))
             self.conn.commit()
             return None
@@ -207,7 +209,7 @@ class MemoryManager:
                         )
 
                 # Update last_used regardless
-                last_used = datetime.datetime.utcnow().isoformat()
+                last_used = datetime.now(UTC).isoformat()
                 self.cursor.execute("UPDATE memory SET last_used = ? WHERE key = ? AND value = ?", (last_used, key, value))
 
         self.conn.commit()
@@ -222,7 +224,7 @@ class MemoryManager:
 
 
     def decay_memory_scores(self, decay_amount=0.1, decay_threshold_minutes=60):
-        now = datetime.datetime.utcnow()
+        now = datetime.now(UTC)
         UNIQUE_KEYS = {"Name", "Birthday", "Partner", "Pronouns", "Location"}
 
         self.cursor.execute("SELECT id, key, obsession_score, last_used FROM memory")
@@ -234,7 +236,7 @@ class MemoryManager:
 
             if last_used:
                 try:
-                    last_dt = datetime.datetime.fromisoformat(last_used)
+                    last_dt = datetime.fromisoformat(last_used)
                     minutes_since_used = (now - last_dt).total_seconds() / 60
                     if minutes_since_used >= decay_threshold_minutes:
                         new_score = max(score - decay_amount, 0)
@@ -931,7 +933,7 @@ def detect_calendar_intent(user_input):
 
     elif detected_intent == "add_recurring_event" and summary and time_str:
         if not date_str:
-            date_str = datetime.datetime.today().strftime("%Y-%m-%d")
+            date_str = datetime.today().strftime("%Y-%m-%d")
         return {"intent": "add_recurring_event", "details": (summary, date_str, time_str, recurrence_rule)}
 
     elif detected_intent == "delete_event" and summary:
@@ -973,7 +975,7 @@ def extract_recurrence_rule(text):
 
         try:
             month_number = list(calendar.month_name).index(month.capitalize())
-            year = datetime.datetime.today().year
+            year = datetime.today().year
             start_date = f"{year}-{month_number:02}-{int(day):02}"
             return "RRULE:FREQ=YEARLY", start_date, is_recurring
         except Exception as e:
