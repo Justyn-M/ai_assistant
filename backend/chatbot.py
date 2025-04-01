@@ -1172,7 +1172,7 @@ def main():
             user_is_away = is_user_away(user_input)
             if user_input.lower() == "exit":
                 save_last_chat_messages(messages)
-                print("Goodbye! Have a great day!")
+                print("== End of Conversation == ")
                 break
         else:
 ## This part is where the 'chat logic' loop is
@@ -1187,7 +1187,7 @@ def main():
 
             if user_input.lower() == "exit":
                 save_last_chat_messages(messages)
-                print("Goodbye! Have a great day!")
+                print("== End of Conversation ==")
                 break
 
             memory_manager.decay_memory_scores()
