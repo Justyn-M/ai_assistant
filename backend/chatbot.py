@@ -1226,39 +1226,45 @@ def main():
                 print("A.Y.U.M.I:", currency_response)
                 messages.append({"role": "assistant", "content": currency_response})
                 continue
+            
             elif intent == "calendar_action":
                 calendar_intent = detect_calendar_intent(user_input)
-                calendar_action = calendar_intent["intent"]
-                details = calendar_intent["details"]
 
-                if calendar_action == "add_event":
-                    _, summary, date, time = details
-                    add_event(summary, date, time)
-                    response = humanize_calendar_response("Event Added", f"{summary} on {date} at {time}")
-
-                elif calendar_action == "add_recurring_event":
-                    summary, start_date, start_time, recurrence_rule = details
-                    add_recurring_event(summary, start_date, start_time, recurrence_rule)
-                    response = humanize_calendar_response("Recurring Event Added", f"{summary} starting {start_date} at {start_time}, rule: {recurrence_rule}")
-
-                elif calendar_action == "delete_event":
-                    _, summary, date = details
-                    calendar_response = delete_event(summary, date)
-                    response = humanize_calendar_response("Event Deletion", calendar_response)
-
-                elif calendar_action == "get_events":
-                    _, date = details
-                    calendar_response = get_events_by_date(date) if date else get_upcoming_events()
-                    response = humanize_calendar_response("Events Retrieved", calendar_response)
+                if calendar_intent and "intent" in calendar_intent and "details" in calendar_intent:
+                    calendar_action = calendar_intent["intent"]
+                    details = calendar_intent["details"]
 
 
-                elif calendar_action == "free_time":
-                    calendar_response = check_free_time()
-                    response = humanize_calendar_response("Free Time Checked", calendar_response)
+                    if calendar_action == "add_event":
+                        _, summary, date, time = details
+                        add_event(summary, date, time)
+                        response = humanize_calendar_response("Event Added", f"{summary} on {date} at {time}")
 
-                print("A.Y.U.M.I:", response)
-                messages.append({"role": "assistant", "content": response})
-                continue  # Skip normal AI response
+                    elif calendar_action == "add_recurring_event":
+                        summary, start_date, start_time, recurrence_rule = details
+                        add_recurring_event(summary, start_date, start_time, recurrence_rule)
+                        response = humanize_calendar_response("Recurring Event Added", f"{summary} starting {start_date} at {start_time}, rule: {recurrence_rule}")
+
+                    elif calendar_action == "delete_event":
+                        _, summary, date = details
+                        calendar_response = delete_event(summary, date)
+                        response = humanize_calendar_response("Event Deletion", calendar_response)
+
+                    elif calendar_action == "get_events":
+                        _, date = details
+                        calendar_response = get_events_by_date(date) if date else get_upcoming_events()
+                        response = humanize_calendar_response("Events Retrieved", calendar_response)
+
+
+                    elif calendar_action == "free_time":
+                        calendar_response = check_free_time()
+                        response = humanize_calendar_response("Free Time Checked", calendar_response)
+
+                    print("A.Y.U.M.I:", response)
+                    messages.append({"role": "assistant", "content": response})
+                    continue  # Skip normal AI response
+                
+                messages.append({"role": "user", "content": user_input})
 
             elif intent == "weather_check":
                 weather_response = get_weather(user_input)
