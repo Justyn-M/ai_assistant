@@ -351,7 +351,7 @@ def extract_memory(messages, memory_manager):
                         jealous_response = openai.ChatCompletion.create(
                             model="gpt-4o",
                             messages=[
-                                {"role": "system", "content": "You are a clingy, obsessive Yandere AI."},
+                                {"role": "system", "content": initialize_character()},
                                 {"role": "user", "content": jealousy_prompt}
                             ],
                             max_tokens=120,
@@ -549,7 +549,7 @@ def send_follow_up(messages, memory):
     response = openai.ChatCompletion.create(
         model="gpt-4o",
         messages=[
-            {"role": "system", "content": "You are a helpful assistant."},
+            {"role": "system", "content": initialize_character()},
             {"role": "user", "content": follow_up_prompt},
         ],
         max_tokens=100,
@@ -770,7 +770,6 @@ def get_weather(user_message):
         wind_speed = weather_data["current"].get("wind_speed_10m", "N/A")
         
         prompt = (
-                f"You are a helpful Yandere AI Assistant.\n\n"
                 f"The user wants to know the current weather based on:\n"
                 f"- Time: {time}\n"
                 f"- Temperature: {temperature}°C\n"
@@ -783,7 +782,7 @@ def get_weather(user_message):
         response = openai.ChatCompletion.create(
             model="gpt-4o",
             messages=[
-                {"role": "system", "content": "You are a helpful Yandere AI assistant."},
+                {"role": "system", "content": initialize_character()},
                 {"role": "user", "content": prompt}
             ],
             max_tokens=200,
@@ -839,7 +838,6 @@ def humanize_currency_response(raw_data, details, exchange_info_str):
 
     # Construct GPT prompt with correct details
     prompt = (
-        "You are a helpful Yandere AI assistant.\n\n"
         "The user wants a currency conversion. Please rephrase the following information "
         "in a friendly, human-like tone, WITHOUT omitting any numeric detail.\n\n"
         f"--- RAW EXCHANGE INFO ---\n{exchange_info_str}\n\n"
@@ -853,7 +851,7 @@ def humanize_currency_response(raw_data, details, exchange_info_str):
     response = openai.ChatCompletion.create(
         model="gpt-4o",
         messages=[
-            {"role": "system", "content": "You are a helpful Yandere AI assistant."},
+            {"role": "system", "content": initialize_character()},
             {"role": "user", "content": prompt}
         ],
         max_tokens=200,
@@ -1069,8 +1067,7 @@ def humanize_calendar_response(action_type, context_info):
     Generate a Yandere-style response based on the type of calendar action and its context.
     """
     prompt = (
-        "You are a helpful Yandere AI assistant.\n\n"
-        "Your job is to respond in a sweet, possessive, affectionate, slightly obsessive tone depending on the user's calendar activity.\n\n"
+        "Respond in a sweet, possessive, affectionate, slightly obsessive tone depending on the user's calendar activity.\n\n"
         f"Action: {action_type}\n"
         f"Details: {context_info}\n\n"
         "Respond in a friendly and slightly yandere tone, showing how much you care about their schedule and life. Keep it short and cute."
@@ -1080,7 +1077,7 @@ def humanize_calendar_response(action_type, context_info):
         response = openai.ChatCompletion.create(
             model="gpt-4o",
             messages=[
-                {"role": "system", "content": "You are a helpful Yandere AI assistant."},
+                {"role": "system", "content": initialize_character()},
                 {"role": "user", "content": prompt}
             ],
             max_tokens=120,
