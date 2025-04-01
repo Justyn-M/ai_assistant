@@ -653,6 +653,32 @@ def away_mode_input():
     line = input().strip()
     return line
 
+# Context Aware Function Selector
+def detect_ayumi_intent(user_input):
+    prompt = (
+        f"User: {user_input}\n\n"
+        "Based on the above message, determine the user's intent.\n"
+        "Choose ONLY ONE from the following list:\n"
+        "- general_chat\n"
+        "- currency_conversion\n"
+        "- weather_check\n"
+        "- calendar_action\n\n"
+        "Respond ONLY with the category name."
+    )
+
+    response = openai.ChatCompletion.create(
+        model="gpt-3.5-turbo",
+        messages=[
+            {"role": "system", "content": "You are an intent classifier assistant."},
+            {"role": "user", "content": prompt}
+        ],
+        max_tokens=10,
+        temperature=0.0
+    )
+
+    return response['choices'][0]['message']['content'].strip().lower()
+
+
 ##### Currency Conversion Functions #####
 def conversion_detection(message):
     pattern = r".*(?:convert|exchange)\s*\$?(\d*\.?\d+)?\s*([A-Za-z]{3}).*?(?:to|in)\s*([A-Za-z]{3}).*"
@@ -730,7 +756,7 @@ def weather_detection(message):
 
     try:
         response = openai.ChatCompletion.create(
-            model="gpt-4o",
+            model="gpt-3.5-turbo",
             messages=[{"role": "user", "content": prompt}],
             max_tokens=50,
             temperature=0.3
@@ -1192,55 +1218,55 @@ def main():
 
             memory_manager.decay_memory_scores()
 
-            # Check for currency conversion request first.
-            currency_response = process_currency_conversion(user_input)
-            if currency_response:
+            # Intent
+            intent = detect_ayumi_intent(user_input)
+
+            if intent == "currency_conversion":
+                currency_response = process_currency_conversion(user_input)
                 print("A.Y.U.M.I:", currency_response)
                 messages.append({"role": "assistant", "content": currency_response})
                 continue
-            
-            # 📅 Handle Calendar Requests
-            calendar_intent = detect_calendar_intent(user_input)
-            if calendar_intent:
-                intent = calendar_intent["intent"]
+            elif intent == "calendar_action":
+                calendar_intent = detect_calendar_intent(user_input)
+                calendar_action = calendar_intent["intent"]
                 details = calendar_intent["details"]
 
-                if intent == "add_event":
+                if calendar_action == "add_event":
                     _, summary, date, time = details
                     add_event(summary, date, time)
                     response = humanize_calendar_response("Event Added", f"{summary} on {date} at {time}")
 
-                elif intent == "add_recurring_event":
+                elif calendar_action == "add_recurring_event":
                     summary, start_date, start_time, recurrence_rule = details
                     add_recurring_event(summary, start_date, start_time, recurrence_rule)
                     response = humanize_calendar_response("Recurring Event Added", f"{summary} starting {start_date} at {start_time}, rule: {recurrence_rule}")
 
-                elif intent == "delete_event":
+                elif calendar_action == "delete_event":
                     _, summary, date = details
                     calendar_response = delete_event(summary, date)
                     response = humanize_calendar_response("Event Deletion", calendar_response)
 
-                elif intent == "get_events":
+                elif calendar_action == "get_events":
                     _, date = details
                     calendar_response = get_events_by_date(date) if date else get_upcoming_events()
                     response = humanize_calendar_response("Events Retrieved", calendar_response)
 
 
-                elif intent == "free_time":
+                elif calendar_action == "free_time":
                     calendar_response = check_free_time()
                     response = humanize_calendar_response("Free Time Checked", calendar_response)
-
-
 
                 print("A.Y.U.M.I:", response)
                 messages.append({"role": "assistant", "content": response})
                 continue  # Skip normal AI response
 
-            weather_response = get_weather(user_input)
-            if weather_response:
+            elif intent == "weather_check":
+                weather_response = get_weather(user_input)
                 print("A.Y.U.M.I:", weather_response)
                 messages.append({"role": "assistant", "content": weather_response})
                 continue
+            else:
+                response = None
 
             was_away = user_is_away
             user_is_away = is_user_away(user_input)
