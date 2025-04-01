@@ -41,6 +41,9 @@ openai.api_key = os.getenv("OPENAI_API_KEY")
 # Replace with your own free tier API key from Alpha Vantage
 API_KEY = os.getenv("Alpha_Vantage_KEY")
 
+# Starting global variables
+current_user_name = None 
+
 last_assistant_response = ""
 is_follow_up = False
 
@@ -152,7 +155,11 @@ class MemoryManager:
         )
         self.conn.commit()
         return None
-
+    
+    def get_user_name(self):
+        self.cursor.execute("SELECT value FROM memory WHERE key = 'Name' OR key = 'User'")
+        row = self.cursor.fetchone()
+        return row[0] if row else None
 
 
     def get_memory_summary(self, limit=10):
@@ -337,6 +344,11 @@ def extract_memory(messages, memory_manager):
                 obsession_score = float(item.get("Obsession", 0))
 
                 if key and value:
+                    # Protect name overwrite
+                    if current_user_name and key.lower() in {"name", "user"}:
+                        print(f"[DEBUG] Skipped memory update for key '{key}' — already talking to {current_user_name}")
+                        continue
+
                     result = memory_manager.remember("GPT", key, value, obsession_score)
                     if result and result.startswith("jealous_overwrite"):
                         _, key_label, change = result.split(":", 2)
@@ -1096,8 +1108,17 @@ def main():
     # Load persistent memory
     memory_manager = MemoryManager()
 
+    global current_user_name
+    current_user_name = memory_manager.get_user_name()
+
     character_message = initialize_character()
-    messages = [{"role": "system", "content": character_message}]
+    messages = [
+        {"role": "system", "content": character_message},
+        {"role": "system", "content": (
+            f"You are currently talking to {current_user_name}." if current_user_name
+            else "You're currently talking to an unidentified user."
+        )}
+    ]
 
     # Load chat history
     chat_history = load_last_chat_messages()
