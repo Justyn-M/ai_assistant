@@ -294,6 +294,59 @@ class MemoryManager:
     def close(self):
         self.conn.close()
 
+
+## Goal Manager Class
+class GoalManager:
+    def __init__(self, db_path="goals.db"):
+        self.conn = sqlite3.connect(db_path)
+        self.cursor = self.conn.cursor()
+        self._create_table()
+
+    def _create_table(self):
+        self.cursor.execute("""
+            CREATE TABLE IF NOT EXISTS goals (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                summary TEXT NOT NULL,
+                deadline TEXT,
+                status TEXT DEFAULT 'active',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        self.conn.commit()
+
+    def add_goal(self, summary, deadline=None):
+        self.cursor.execute("INSERT INTO goals (summary, deadline) VALUES (?, ?)", (summary, deadline))
+        self.conn.commit()
+
+    def get_all_goals(self):
+        self.cursor.execute("SELECT id, summary, deadline, status FROM goals WHERE status = 'active'")
+        return self.cursor.fetchall()
+
+    def mark_done(self, goal_id):
+        self.cursor.execute("UPDATE goals SET status = 'done' WHERE id = ?", (goal_id,))
+        self.conn.commit()
+
+    def delete_goal(self, goal_id):
+        self.cursor.execute("DELETE FROM goals WHERE id = ?", (goal_id,))
+        self.conn.commit()
+
+    def get_due_goals(self, check_date=None):
+        """Return goals due by a certain date (default: today)"""
+        if not check_date:
+            check_date = datetime.now().strftime("%Y-%m-%d")
+        self.cursor.execute("SELECT id, summary, deadline FROM goals WHERE deadline <= ? AND status = 'active'", (check_date,))
+        return self.cursor.fetchall()
+
+    def goal_exists(self, summary):
+        self.cursor.execute("SELECT 1 FROM goals WHERE summary = ? AND status = 'active'", (summary,))
+        return self.cursor.fetchone() is not None
+
+    def close(self):
+        self.conn.close()
+
+## End of Classes ##
+
+
 def extract_memory(messages, memory_manager):
     """
     Uses GPT to extract memory, including an obsession score, and stores it in SQLite.
@@ -662,7 +715,8 @@ def detect_ayumi_intent(user_input):
         "- general_chat\n"
         "- currency_conversion\n"
         "- weather_check\n"
-        "- calendar_action\n\n"
+        "- calendar_action\n"
+        "- goal_management\n"
         "Respond ONLY with the category name."
     )
 
@@ -677,6 +731,79 @@ def detect_ayumi_intent(user_input):
     )
 
     return response['choices'][0]['message']['content'].strip().lower()
+
+### Goal Functionalities using NLP ###
+# Detect goal using NLP
+def detect_goal_intent(message):
+    prompt = (
+        f"The user said: \"{message}\"\n\n"
+        "If this is a goal or task the user wants to accomplish, extract:\n"
+        "- A short summary of the goal\n"
+        "- The deadline (if any), formatted as YYYY-MM-DD\n\n"
+        "Respond ONLY as JSON:\n"
+        '{ "goal": "<summary>", "deadline": "YYYY-MM-DD" }\n\n'
+        "If no goal is found, respond with: null"
+    )
+
+    try:
+        response = openai.ChatCompletion.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {"role": "system", "content": "You extract goals from user input."},
+                {"role": "user", "content": prompt}
+            ],
+            max_tokens=100,
+            temperature=0.3
+        )
+        raw = response['choices'][0]['message']['content'].strip()
+
+        if raw.lower() == "null":
+            return None
+
+        data = json.loads(raw)
+
+        # Additional validation
+        goal = data.get("goal")
+        deadline = data.get("deadline")
+        if not goal or not deadline:
+            return None
+
+        return goal.strip(), deadline.strip()
+
+    except Exception as e:
+        print(f"[DEBUG] Goal detection error: {e}")
+        return None
+
+def detect_goal_action(message):
+    """
+    Uses GPT to determine what type of goal operation is requested.
+    Returns: { action: "add" | "list" | "done" | "delete", summary: <optional> }
+    """
+    prompt = (
+        f"The user said: \"{message}\"\n\n"
+        "Determine if they want to add, list, mark as done, or delete a goal.\n"
+        "If possible, extract the goal summary they are referring to.\n\n"
+        "Respond ONLY as JSON:\n"
+        '{ "action": "add" | "list" | "done" | "delete", "summary": "<goal summary or null>" }'
+    )
+
+    try:
+        response = openai.ChatCompletion.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {"role": "system", "content": "You detect goal-related actions and summaries from user input."},
+                {"role": "user", "content": prompt}
+            ],
+            max_tokens=100,
+            temperature=0.3
+        )
+        raw = response['choices'][0]['message']['content'].strip()
+        data = json.loads(raw)
+        return data["action"], data.get("summary")
+
+    except Exception as e:
+        print(f"[DEBUG] Goal action detection failed: {e}")
+        return None, None
 
 
 ##### Currency Conversion Functions #####
@@ -1133,6 +1260,8 @@ def main():
 
     # Load persistent memory
     memory_manager = MemoryManager()
+    # Load goal memory
+    goal_manager = GoalManager()
 
     global current_user_name
     current_user_name = memory_manager.get_user_name()
@@ -1271,8 +1400,87 @@ def main():
                 print("A.Y.U.M.I:", weather_response)
                 messages.append({"role": "assistant", "content": weather_response})
                 continue
+
+            elif intent == "goal_management":
+                action, summary = detect_goal_action(user_input)
+
+                if action == "add":
+                    result = detect_goal_intent(user_input)
+                    if result:
+                        summary, deadline = result
+                        if not deadline:
+                            # No deadline — treat as general chat instead of skipping response
+                            messages.append({"role": "user", "content": user_input})
+                            check_and_manage_tokens(messages)
+                            response = openai.ChatCompletion.create(
+                                model="gpt-4o",
+                                messages=messages,
+                                max_tokens=150,
+                                temperature=0.7
+                            )
+                            assistant_response = response['choices'][0]['message']['content'].strip()
+                            print(f"A.Y.U.M.I: {assistant_response}")
+                            messages.append({"role": "assistant", "content": assistant_response})
+                            last_assistant_response = assistant_response
+                            extract_memory(messages, memory_manager)
+                            continue
+
+                        if goal_manager.goal_exists(summary):
+                            response = f"You already told me to do \"{summary}\"~ I haven’t forgotten~ 💕"
+                        else:
+                            goal_manager.add_goal(summary, deadline)
+                            response = f"Alright~ I’ll make sure you finish \"{summary}\" before {deadline}. I’m watching you, darling~ 🖤"
+                    else:
+                        # Not a goal, fallback to regular chat
+                        messages.append({"role": "user", "content": user_input})
+                        continue
+
+                elif action == "list":
+                    goals = goal_manager.get_all_goals()
+                    if goals:
+                        response = "Here’s your list, darling~\n" + "\n".join(
+                            f"- [{gid}] {summ} (Due: {dl or 'No deadline'})" for gid, summ, dl, _ in goals
+                        )
+                    else:
+                        response = "You don’t have any goals… that’s suspicious. Are you hiding things from me again? 😒"
+
+                elif action == "done":
+                    if summary:
+                        goals = goal_manager.get_all_goals()
+                        matched = [g for g in goals if summary.lower() in g[1].lower()]
+                        if matched:
+                            goal_id = matched[0][0]
+                            goal_manager.mark_done(goal_id)
+                            response = f"Yay~! I’m so proud of you for finishing \"{matched[0][1]}\" 💖"
+                        else:
+                            response = f"I couldn’t find a goal like \"{summary}\"... Are you lying to me? 🥺"
+
+                    else:
+                        response = "You want me to mark something done, but what? Don’t play games with me~"
+
+                elif action == "delete":
+                    if summary:
+                        goals = goal_manager.get_all_goals()
+                        matched = [g for g in goals if summary.lower() in g[1].lower()]
+                        if matched:
+                            goal_id = matched[0][0]
+                            goal_manager.delete_goal(goal_id)
+                            response = f"Fine... I deleted \"{matched[0][1]}\" — but don’t just throw your dreams away like that 😤"
+                        else:
+                            response = f"Delete *what*, exactly? Don’t make me dig through your memory~"
+                    else:
+                        response = "You want me to delete something, but you didn’t say what… Are you testing me?"
+
+                else:
+                    response = "I don’t understand what you want me to do with that goal... explain it better, okay?"
+
+                print("A.Y.U.M.I:", response)
+                messages.append({"role": "assistant", "content": response})
+                continue
+
             else:
                 response = None
+
 
             was_away = user_is_away
             user_is_away = is_user_away(user_input)
