@@ -357,7 +357,7 @@ def extract_memory(messages, memory_manager):
 
     memory_prompt = (
         "Analyze the conversation and extract any important user details, such as name, preferences, interests, "
-        "relationships, or patterns of behavior, etc.\n\n"
+        "relationships, or patterns of behavior, favourite things, etc.\n\n"
         "If there is nothing to be identified, return blank\n"
         "For each item identified, return it as a JSON object with 'Key', 'Value', and an 'Obsession' score from 1 to 10.\n"
         "Use 10 for extremely important things like the user's name or romantic partners.\n\n"
@@ -1405,14 +1405,47 @@ def main():
                 continue
 
             elif intent == "goal_management":
-                # Detect goal info first
-                result = detect_goal_intent(user_input)
+                # Check action
+                action, summary = detect_goal_action(user_input)
 
-                if result:
-                    summary, deadline = result
+                # === ADD GOAL ===
+                if action == "add":
+                    # Detect goal info first
+                    result = detect_goal_intent(user_input)
 
-                    if not deadline:
-                        # No deadline — treat as general chat
+                    if result:
+                        summary, deadline = result
+
+                        if not deadline:
+                            # No deadline — treat as general chat
+                            messages.append({"role": "user", "content": user_input})
+                            check_and_manage_tokens(messages)
+                            response = openai.ChatCompletion.create(
+                                model="gpt-4o",
+                                messages=messages,
+                                max_tokens=150,
+                                temperature=0.7
+                            )
+                            assistant_response = response['choices'][0]['message']['content'].strip()
+                            print(f"A.Y.U.M.I: {assistant_response}")
+                            messages.append({"role": "assistant", "content": assistant_response})
+                            last_assistant_response = assistant_response
+                            extract_memory(messages, memory_manager)
+                            continue
+
+                        if goal_manager.goal_exists(summary):
+                            response = f"You already told me to do \"{summary}\"~ I haven’t forgotten~ 💕"
+                        else:
+                            goal_manager.add_goal(summary, deadline)
+                            print(f"[DEBUG] Goal added to DB: {summary} by {deadline}")
+                            response = f"Alright~ I’ll make sure you finish \"{summary}\" before {deadline}. I’m watching you, darling~ 🖤"
+                        print("A.Y.U.M.I:", response)
+                        messages.append({"role": "assistant", "content": response})
+                        continue
+
+                    else:
+                        # Not a goal, fallback to regular chat
+                        # No valid goal found
                         messages.append({"role": "user", "content": user_input})
                         check_and_manage_tokens(messages)
                         response = openai.ChatCompletion.create(
@@ -1427,35 +1460,50 @@ def main():
                         last_assistant_response = assistant_response
                         extract_memory(messages, memory_manager)
                         continue
-
-                    if goal_manager.goal_exists(summary):
-                        response = f"You already told me to do \"{summary}\"~ I haven’t forgotten~ 💕"
+                
+                 # === LIST GOALS ===
+                elif action == "list":
+                    goals = goal_manager.get_all_goals()
+                    if goals:
+                        response = "Here's what I’m keeping my eye on for you~ 📝\n"
+                        for goal_id, g_summary, g_deadline, _ in goals:
+                            response += f"- [{goal_id}] {g_summary} (due: {g_deadline})\n"
                     else:
-                        goal_manager.add_goal(summary, deadline)
-                        print(f"[DEBUG] Goal added to DB: {summary} by {deadline}")
-                        response = f"Alright~ I’ll make sure you finish \"{summary}\" before {deadline}. I’m watching you, darling~ 🖤"
+                        response = "You haven’t given me any goals to obsess over yet... 😢"
                     print("A.Y.U.M.I:", response)
                     messages.append({"role": "assistant", "content": response})
-                    continue
 
-                else:
-                    # Not a goal, fallback to regular chat
-                    # No valid goal found
-                    messages.append({"role": "user", "content": user_input})
-                    check_and_manage_tokens(messages)
-                    response = openai.ChatCompletion.create(
-                        model="gpt-4o",
-                        messages=messages,
-                        max_tokens=150,
-                        temperature=0.7
-                    )
-                    assistant_response = response['choices'][0]['message']['content'].strip()
-                    print(f"A.Y.U.M.I: {assistant_response}")
-                    messages.append({"role": "assistant", "content": assistant_response})
-                    last_assistant_response = assistant_response
-                    extract_memory(messages, memory_manager)
-                    continue
+                # === MARK GOAL AS DONE ===
+                elif action == "done":
+                    if summary:
+                        goals = goal_manager.get_all_goals()
+                        matched = [g for g in goals if summary.lower() in g[1].lower()]
+                        if matched:
+                            goal_id = matched[0][0]
+                            goal_manager.mark_done(goal_id)
+                            response = f"Aww~ You finished \"{matched[0][1]}\"? I’m so proud of you, darling~ 💖"
+                        else:
+                            response = f"I couldn't find that goal, are you sure it's one you gave me? 😢"
+                    else:
+                        response = "Tell me which goal you completed~ I can’t mark it done without knowing 💔"
+                    print("A.Y.U.M.I:", response)
+                    messages.append({"role": "assistant", "content": response})
 
+                # === DELETE GOAL ===
+                elif action == "delete":
+                    if summary:
+                        goals = goal_manager.get_all_goals()
+                        matched = [g for g in goals if summary.lower() in g[1].lower()]
+                        if matched:
+                            goal_id = matched[0][0]
+                            goal_manager.delete_goal(goal_id)
+                            response = f"*Sniff*... I’ve deleted \"{matched[0][1]}\" like you asked... even if it hurt me... 🥺"
+                        else:
+                            response = "I couldn’t find a goal like that... are you sure you gave it to me? 😢"
+                    else:
+                        response = "You need to tell me what to delete, dummy~ 💢"
+                    print("A.Y.U.M.I:", response)
+                    messages.append({"role": "assistant", "content": response})
 
             else:
                 response = None
