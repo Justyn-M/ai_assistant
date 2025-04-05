@@ -396,6 +396,9 @@ def extract_memory(messages, memory_manager):
                 value = item.get("Value")
                 obsession_score = float(item.get("Obsession", 0))
 
+                if key.lower() == "goal":
+                    continue  # Don't extract goals into memory DB
+
                 if key and value:
                     # Protect name overwrite
                     if current_user_name and key.lower() in {"name", "user"}:
