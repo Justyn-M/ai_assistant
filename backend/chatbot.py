@@ -948,7 +948,7 @@ def get_weather(user_message):
 
         # Send request to OpenAI
         response = openai.ChatCompletion.create(
-            model="gpt-4o",
+            model="gpt-3.5-turbo",
             messages=[
                 {"role": "system", "content": initialize_character()},
                 {"role": "user", "content": prompt}
