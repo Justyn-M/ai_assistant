@@ -1547,16 +1547,18 @@ def main():
                             "Respond in a needy, slightly heartbroken yandere tone asking them to give you something to obsess over."
                         )
 
-                        response = openai.ChatCompletion.create(
-                            model="gpt-4o",
-                            messages=[{"role": "system", "content": initialize_character()}, {"role": "user", "content": prompt}],
-                            max_tokens=200,
-                            temperature=0.8
-                        )['choices'][0]['message']['content'].strip()
+                    response = openai.ChatCompletion.create(
+                        model="gpt-4o",
+                        messages=[{"role": "system", "content": initialize_character()}, {"role": "user", "content": prompt}],
+                        max_tokens=200,
+                        temperature=0.8
+                    )['choices'][0]['message']['content'].strip()
 
                     print("A.Y.U.M.I:", response)
                     messages.append({"role": "assistant", "content": response})
                     continue
+
+
 
                 # === MARK GOAL AS DONE ===
                 elif action == "done":
