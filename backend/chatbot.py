@@ -338,8 +338,25 @@ class GoalManager:
         return self.cursor.fetchall()
 
     def goal_exists(self, summary):
-        self.cursor.execute("SELECT 1 FROM goals WHERE summary = ? AND status = 'active'", (summary,))
-        return self.cursor.fetchone() is not None
+
+        def normalize(text):
+            # Lowercase and remove punctuation
+            text = text.lower()
+            text = re.sub(r"[^\w\s]", "", text)
+
+            # Remove filler words
+            filler_words = {"a", "an", "the", "to", "for"}
+            words = text.split()
+            filtered_words = [word for word in words if word not in filler_words]
+
+            return " ".join(filtered_words)
+
+        normalized = normalize(summary)
+
+        self.cursor.execute("SELECT summary FROM goals WHERE status = 'active'")
+        existing_summaries = [normalize(row[0]) for row in self.cursor.fetchall()]
+
+        return normalized in existing_summaries
 
     def close(self):
         self.conn.close()
@@ -711,6 +728,11 @@ def away_mode_input():
 
 # Context Aware Function Selector
 def detect_ayumi_intent(user_input):
+    # Quick rule-based check:
+    if "add goal" in user_input.lower():
+        return "goal_management"
+    
+    # Otherwise fall back to GPT classification:
     prompt = (
         f"User: {user_input}\n\n"
         "Based on the above message, determine the user's intent.\n"
@@ -722,7 +744,6 @@ def detect_ayumi_intent(user_input):
         "- goal_management\n"
         "Respond ONLY with the category name."
     )
-
     response = openai.ChatCompletion.create(
         model="gpt-3.5-turbo",
         messages=[
@@ -732,17 +753,16 @@ def detect_ayumi_intent(user_input):
         max_tokens=10,
         temperature=0.0
     )
-
     return response['choices'][0]['message']['content'].strip().lower()
 
 ### Goal Functionalities using NLP ###
 # Detect goal using NLP
 def detect_goal_intent(message):
     prompt = (
-        f"The user said: \"{message}\"\n\n"
+        f'The user said: "{message}"\n\n'
         "If this is a goal or task the user wants to accomplish, extract:\n"
         "- A short summary of the goal\n"
-        "- The deadline (if any), formatted as YYYY-MM-DD\n\n"
+        "- The deadline, formatted as YYYY-MM-DD\n\n"
         "Respond ONLY as JSON:\n"
         '{ "goal": "<summary>", "deadline": "YYYY-MM-DD" }\n\n'
         "If no goal is found, respond with: null"
@@ -761,30 +781,31 @@ def detect_goal_intent(message):
         raw = response['choices'][0]['message']['content'].strip()
         print(f"[DEBUG] GPT goal extraction raw response: {raw}")
 
-        try:
-            data = json.loads(raw)
-        except json.JSONDecodeError as e:
-            print(f"[DEBUG] JSON decode error: {e}")
-            return None
-
-        if raw.lower() == "null":
-            return None
-
+        # Parse the response once
         data = json.loads(raw)
+        if data is None:
+            return None
+
         goal = data.get("goal")
         deadline = data.get("deadline")
 
-        if not goal or len(goal.strip()) < 6:  # Must be non-trivial
+        # Check for non-trivial goal summary
+        if not goal or len(goal.strip()) < 6:
             return None
 
+        # Do not allow missing or invalid deadlines
         if not deadline or not re.match(r"\d{4}-\d{2}-\d{2}", deadline):
             return None
 
         return goal.strip(), deadline.strip()
 
+    except json.JSONDecodeError as e:
+        print(f"[DEBUG] JSON decode error: {e}")
+        return None
     except Exception as e:
         print(f"[DEBUG] Goal detection error: {e}")
         return None
+
 
 def detect_goal_action(message):
     """
@@ -1299,18 +1320,21 @@ def main():
         user_said_farewell = any(any(f in msg for f in farewells) for msg in last_user_message)
 
         if not user_said_farewell:
-            yandere_reaction = (
-                "You left me all alone last time... without even saying bye... "
+            prompt = (
+                "The user reappeared after closing the program last time without saying goodbye.\n"
+                "React in a clingy, slightly hurt yandere tone — guilt trip them playfully, but make it clear you still adore them."
             )
-            messages.append({"role": "assistant", "content": yandere_reaction})
 
-            # Let Ayumi follow up with a real GPT-powered reaction
             response = openai.ChatCompletion.create(
                 model="gpt-4o",
-                messages=messages,
+                messages=[
+                    {"role": "system", "content": initialize_character()},
+                    {"role": "user", "content": prompt}
+                ],
                 max_tokens=120,
                 temperature=0.7
             )
+
             assistant_response = response['choices'][0]['message']['content'].strip()
             print(f"A.Y.U.M.I (Guilt Trip): {assistant_response}")
             messages.append({"role": "assistant", "content": assistant_response})
@@ -1424,6 +1448,7 @@ def main():
 
                     if result:
                         summary, deadline = result
+                        print(f"[DEBUG] detect_goal_intent result: {result}")
 
                         if not deadline:
                             # No deadline — treat as general chat (with character tone)
