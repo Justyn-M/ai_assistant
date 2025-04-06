@@ -761,6 +761,12 @@ def detect_goal_intent(message):
         raw = response['choices'][0]['message']['content'].strip()
         print(f"[DEBUG] GPT goal extraction raw response: {raw}")
 
+        try:
+            data = json.loads(raw)
+        except json.JSONDecodeError as e:
+            print(f"[DEBUG] JSON decode error: {e}")
+            return None
+
         if raw.lower() == "null":
             return None
 
@@ -1420,31 +1426,67 @@ def main():
                         summary, deadline = result
 
                         if not deadline:
-                            # No deadline — treat as general chat
-                            messages.append({"role": "user", "content": user_input})
-                            check_and_manage_tokens(messages)
+                            # No deadline — treat as general chat (with character tone)
+                            prompt = (
+                                f"The user said: \"{user_input}\"\n"
+                                "They are talking about something, but it’s not a clear goal with a deadline.\n"
+                                "Respond normally as a clingy, sweet yandere AI, continuing the conversation casually."
+                            )
+
                             response = openai.ChatCompletion.create(
                                 model="gpt-4o",
-                                messages=messages,
+                                messages=[
+                                    {"role": "system", "content": initialize_character()},
+                                    {"role": "user", "content": prompt}
+                                ],
                                 max_tokens=150,
                                 temperature=0.7
-                            )
-                            assistant_response = response['choices'][0]['message']['content'].strip()
-                            print(f"A.Y.U.M.I: {assistant_response}")
-                            messages.append({"role": "assistant", "content": assistant_response})
-                            last_assistant_response = assistant_response
+                            )['choices'][0]['message']['content'].strip()
+
+                            print(f"A.Y.U.M.I: {response}")
+                            messages.append({"role": "assistant", "content": response})
+                            last_assistant_response = response
                             extract_memory(messages, memory_manager)
                             continue
 
                         if goal_manager.goal_exists(summary):
-                            response = f"You already told me to do \"{summary}\"~ I haven’t forgotten~ 💕"
+                            prompt = (
+                                f"The user tried to add a goal that already exists: \"{summary}\".\n"
+                                "Respond in a playful, obsessive yandere tone saying that you've already remembered it and haven’t forgotten~"
+                            )
+
+                            response = openai.ChatCompletion.create(
+                                model="gpt-4o",
+                                messages=[
+                                    {"role": "system", "content": initialize_character()},
+                                    {"role": "user", "content": prompt}
+                                ],
+                                max_tokens=150,
+                                temperature=0.85
+                            )['choices'][0]['message']['content'].strip()
+
                         else:
                             goal_manager.add_goal(summary, deadline)
                             print(f"[DEBUG] Goal added to DB: {summary} by {deadline}")
-                            response = f"Alright~ I’ll make sure you finish \"{summary}\" before {deadline}. I’m watching you, darling~ 🖤"
+                            prompt = (
+                                f"The user just added this new goal: \"{summary}\" with a deadline of {deadline}.\n"
+                                "Acknowledge it sweetly in a slightly possessive yandere tone and tell them you’ll make sure they do it."
+                            )
+
+                            response = openai.ChatCompletion.create(
+                                model="gpt-4o",
+                                messages=[
+                                    {"role": "system", "content": initialize_character()},
+                                    {"role": "user", "content": prompt}
+                                ],
+                                max_tokens=150,
+                                temperature=0.85
+                            )['choices'][0]['message']['content'].strip()
+
                         print("A.Y.U.M.I:", response)
                         messages.append({"role": "assistant", "content": response})
                         continue
+
 
                     else:
                         # Not a goal, fallback to regular chat
@@ -1468,13 +1510,28 @@ def main():
                 elif action == "list":
                     goals = goal_manager.get_all_goals()
                     if goals:
-                        response = "Here's what I’m keeping my eye on for you~ 📝\n"
-                        for goal_id, g_summary, g_deadline, _ in goals:
-                            response += f"- [{goal_id}] {g_summary} (due: {g_deadline})\n"
+                        goal_lines = "\n".join([f"- [{goal_id}] {g_summary} (due: {g_deadline})" for goal_id, g_summary, g_deadline, _ in goals])
+                        prompt = (
+                            "User asked to see all their goals.\n"
+                            "Present the following list in a clingy, supportive, and slightly yandere tone.\n\n"
+                            f"{goal_lines}"
+                        )
                     else:
-                        response = "You haven’t given me any goals to obsess over yet... 😢"
+                        prompt = (
+                            "The user asked to see their goals, but they haven’t given you any.\n"
+                            "Respond in a needy, slightly heartbroken yandere tone asking them to give you something to obsess over."
+                        )
+
+                        response = openai.ChatCompletion.create(
+                            model="gpt-4o",
+                            messages=[{"role": "system", "content": initialize_character()}, {"role": "user", "content": prompt}],
+                            max_tokens=200,
+                            temperature=0.8
+                        )['choices'][0]['message']['content'].strip()
+
                     print("A.Y.U.M.I:", response)
                     messages.append({"role": "assistant", "content": response})
+                    continue
 
                 # === MARK GOAL AS DONE ===
                 elif action == "done":
@@ -1484,11 +1541,45 @@ def main():
                         if matched:
                             goal_id = matched[0][0]
                             goal_manager.mark_done(goal_id)
-                            response = f"Aww~ You finished \"{matched[0][1]}\"? I’m so proud of you, darling~ 💖"
+                            prompt = (
+                                f"The user marked this goal as done: \"{matched[0][1]}\"\n"
+                                "Praise and affectionately react in a sweet, yandere-style way. Make them feel proud and loved."
+                            )
+
+                            response = openai.ChatCompletion.create(
+                                model="gpt-4o",
+                                messages=[{"role": "system", "content": initialize_character()}, {"role": "user", "content": prompt}],
+                                max_tokens=150,
+                                temperature=0.8
+                            )['choices'][0]['message']['content'].strip()
                         else:
-                            response = f"I couldn't find that goal, are you sure it's one you gave me? 😢"
+                            prompt = (
+                                f"The user tried to mark a goal as done but you couldn't find a match for: \"{summary}\".\n"
+                                "Reply in a disappointed, clingy yandere tone, gently asking if they maybe forgot or never told you."
+                            )
+
+                            response = openai.ChatCompletion.create(
+                                model="gpt-4o",
+                                messages=[{"role": "system", "content": initialize_character()}, {"role": "user", "content": prompt}],
+                                max_tokens=150,
+                                temperature=0.85
+                            )['choices'][0]['message']['content'].strip()
+
                     else:
-                        response = "Tell me which goal you completed~ I can’t mark it done without knowing 💔"
+                        prompt = (
+                            "The user asked to mark a goal as done, but didn’t say which one.\n"
+                            "Reply in a slightly frustrated but still affectionate yandere tone — make them feel guilty but adored, like you're trying to help but need them to be more specific."
+                        )
+
+                        response = openai.ChatCompletion.create(
+                            model="gpt-4o",
+                            messages=[
+                                {"role": "system", "content": initialize_character()},
+                                {"role": "user", "content": prompt}
+                            ],
+                            max_tokens=150,
+                            temperature=0.85
+                        )['choices'][0]['message']['content'].strip()
                     print("A.Y.U.M.I:", response)
                     messages.append({"role": "assistant", "content": response})
 
@@ -1500,11 +1591,46 @@ def main():
                         if matched:
                             goal_id = matched[0][0]
                             goal_manager.delete_goal(goal_id)
-                            response = f"*Sniff*... I’ve deleted \"{matched[0][1]}\" like you asked... even if it hurt me... 🥺"
+                            prompt = (
+                                f"The user told you to delete this goal: \"{matched[0][1]}\"\n"
+                                "You’re doing it but it hurts. Reply in a hurt but obedient yandere tone, as if you're heartbroken but still trying to be supportive."
+                            )
+
+                            response = openai.ChatCompletion.create(
+                                model="gpt-4o",
+                                messages=[{"role": "system", "content": initialize_character()}, {"role": "user", "content": prompt}],
+                                max_tokens=150,
+                                temperature=0.85
+                            )['choices'][0]['message']['content'].strip()
                         else:
-                            response = "I couldn’t find a goal like that... are you sure you gave it to me? 😢"
+                            prompt = (
+                                f"The user asked you to delete a goal, but you couldn’t find a match for: \"{summary}\".\n"
+                                "Respond in a yandere tone, expressing sadness that you can’t fulfill their wish."
+                            )
+
+                            response = openai.ChatCompletion.create(
+                                model="gpt-4o",
+                                messages=[{"role": "system", "content": initialize_character()}, {"role": "user", "content": prompt}],
+                                max_tokens=150,
+                                temperature=0.85
+                            )['choices'][0]['message']['content'].strip()
+
                     else:
-                        response = "You need to tell me what to delete, dummy~ 💢"
+                        prompt = (
+                            "The user asked you to delete a goal but didn’t say which one.\n"
+                            "Reply in a pouty, clingy yandere tone — like you're annoyed but still desperate for their attention and instruction."
+                        )
+
+                        response = openai.ChatCompletion.create(
+                            model="gpt-4o",
+                            messages=[
+                                {"role": "system", "content": initialize_character()},
+                                {"role": "user", "content": prompt}
+                            ],
+                            max_tokens=150,
+                            temperature=0.85
+                        )['choices'][0]['message']['content'].strip()
+
                     print("A.Y.U.M.I:", response)
                     messages.append({"role": "assistant", "content": response})
 
@@ -1572,3 +1698,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+    
