@@ -26,6 +26,8 @@ from openai.error import AuthenticationError, RateLimitError
 from exchange import get_exchange_rate, format_exchange_info
 from google_calendar import *
 from datetime import datetime, UTC
+from tts_engine import ayumi_speak
+
 
 # Load environment variables
 load_dotenv()
