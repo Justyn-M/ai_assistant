@@ -9,6 +9,7 @@ import re
 import requests
 import datetime
 import calendar
+import threading
 
 
 # SpaCy imports
@@ -446,6 +447,7 @@ def extract_memory(messages, memory_manager):
                         )
 
                         print("A.Y.U.M.I (Jealous):", jealous_response['choices'][0]['message']['content'].strip())
+                        speak_async(jealous_response)
 
 
     except json.JSONDecodeError:
@@ -484,6 +486,12 @@ def load_last_chat_messages(filepath=CHAT_HISTORY_FILE):
 # All replaced by SQLite + GPT-based memory extraction & injection
 
 # ------------------------- End of Memory Functions -------------------------
+
+def speak_async(text):
+    try:
+        threading.Thread(target=ayumi_speak, args=(text,), daemon=True).start()
+    except Exception as e:
+        print(f"[TTS ERROR]: {e}")
 
 def initialize_character():
     profile = CHARACTER_PROFILE
@@ -657,6 +665,7 @@ def send_follow_up(messages, memory):
         follow_up_response = response['choices'][0]['message']['content'].strip()
 
     print(f"A.Y.U.M.I (Follow-Up): {follow_up_response}")
+    speak_async(follow_up_response)
     messages.append({"role": "assistant", "content": follow_up_response})
     last_assistant_response = follow_up_response
 
@@ -1339,6 +1348,7 @@ def main():
 
             assistant_response = response['choices'][0]['message']['content'].strip()
             print(f"A.Y.U.M.I (Guilt Trip): {assistant_response}")
+            speak_async(assistant_response)
             messages.append({"role": "assistant", "content": assistant_response})
         else:
             messages.append({"role": "system", "content": "User has returned. Start the conversation again."})
@@ -1351,6 +1361,7 @@ def main():
             )
             assistant_response = response['choices'][0]['message']['content'].strip()
             print(f"A.Y.U.M.I: {assistant_response}")
+            speak_async(assistant_response)
             messages.append({"role": "assistant", "content": assistant_response})
 
     last_assistant_response = ""
@@ -1391,6 +1402,7 @@ def main():
             if intent == "currency_conversion":
                 currency_response = process_currency_conversion(user_input)
                 print("A.Y.U.M.I:", currency_response)
+                speak_async(currency_response)
                 messages.append({"role": "assistant", "content": currency_response})
                 continue
             
@@ -1428,6 +1440,7 @@ def main():
                         response = humanize_calendar_response("Free Time Checked", calendar_response)
 
                     print("A.Y.U.M.I:", response)
+                    speak_async(response)
                     messages.append({"role": "assistant", "content": response})
                     continue  # Skip normal AI response
                 
@@ -1436,6 +1449,7 @@ def main():
             elif intent == "weather_check":
                 weather_response = get_weather(user_input)
                 print("A.Y.U.M.I:", weather_response)
+                speak_async(weather_response)
                 messages.append({"role": "assistant", "content": weather_response})
                 continue
 
@@ -1471,6 +1485,7 @@ def main():
                             )['choices'][0]['message']['content'].strip()
 
                             print(f"A.Y.U.M.I: {response}")
+                            speak_async(response)
                             messages.append({"role": "assistant", "content": response})
                             last_assistant_response = response
                             extract_memory(messages, memory_manager)
@@ -1511,6 +1526,7 @@ def main():
                             )['choices'][0]['message']['content'].strip()
 
                         print("A.Y.U.M.I:", response)
+                        speak_async(response)
                         messages.append({"role": "assistant", "content": response})
                         continue
 
@@ -1528,6 +1544,7 @@ def main():
                         )
                         assistant_response = response['choices'][0]['message']['content'].strip()
                         print(f"A.Y.U.M.I: {assistant_response}")
+                        speak_async(assistant_response)
                         messages.append({"role": "assistant", "content": assistant_response})
                         last_assistant_response = assistant_response
                         extract_memory(messages, memory_manager)
@@ -1557,6 +1574,7 @@ def main():
                     )['choices'][0]['message']['content'].strip()
 
                     print("A.Y.U.M.I:", response)
+                    speak_async(response)
                     messages.append({"role": "assistant", "content": response})
                     continue
 
@@ -1610,6 +1628,7 @@ def main():
                             temperature=0.85
                         )['choices'][0]['message']['content'].strip()
                     print("A.Y.U.M.I:", response)
+                    speak_async(response)
                     messages.append({"role": "assistant", "content": response})
 
                 # === DELETE GOAL ===
@@ -1661,6 +1680,7 @@ def main():
                         )['choices'][0]['message']['content'].strip()
 
                     print("A.Y.U.M.I:", response)
+                    speak_async(response)
                     messages.append({"role": "assistant", "content": response})
 
             else:
@@ -1696,6 +1716,7 @@ def main():
                 )
                 assistant_response = response['choices'][0]['message']['content'].strip()
                 print(f"A.Y.U.M.I: {assistant_response}")
+                speak_async(assistant_response)
                 messages.append({"role": "assistant", "content": assistant_response})
                 last_assistant_response = assistant_response
                 extract_memory(messages, memory_manager)
@@ -1711,6 +1732,7 @@ def main():
                 )
                 assistant_response = response['choices'][0]['message']['content'].strip()
                 print(f"A.Y.U.M.I: {assistant_response}")
+                speak_async(assistant_response)
                 messages.append({"role": "assistant", "content": assistant_response})
                 last_assistant_response = assistant_response
                 extract_memory(messages, memory_manager)

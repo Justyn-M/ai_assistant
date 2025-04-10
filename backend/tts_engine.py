@@ -7,7 +7,6 @@ tts = TTS(model_name="tts_models/multilingual/multi-dataset/xtts_v2", gpu=False)
 DEFAULT_SPEAKER = "voices/Ayumi_English_Voice_mixdown.wav"
 
 def ayumi_speak(text, speaker_wav=DEFAULT_SPEAKER):
-    print(f"A.Y.U.M.I: {text}")
     
     # Create temporary .wav file
     with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
