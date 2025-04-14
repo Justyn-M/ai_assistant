@@ -9,7 +9,7 @@ import re
 import requests
 import datetime
 import calendar
-import threading
+
 
 
 # SpaCy imports
@@ -27,8 +27,7 @@ from openai.error import AuthenticationError, RateLimitError
 from exchange import get_exchange_rate, format_exchange_info
 from google_calendar import *
 from datetime import datetime, UTC
-from tts_engine import ayumi_speak
-
+from tts_engine import *
 
 # Load environment variables
 load_dotenv()
@@ -195,7 +194,14 @@ class MemoryManager:
             normalized_key = self.normalize_key(key)
             value_l = value.lower()
 
-            is_relevant = any(word in normalized_key.lower() or word in value_l for word in tokens)
+            # Break each memory key and value into sets of lowercased words
+            key_tokens = set(normalized_key.lower().split())
+            value_tokens = set(value_l.split())
+            user_tokens = {t for t in tokens}
+
+            # Check if there's any overlap between user_tokens and the memory
+            is_relevant = bool(user_tokens & key_tokens) or bool(user_tokens & value_tokens)
+
             is_high_priority = score >= 8
 
             if is_relevant or is_high_priority:
@@ -447,7 +453,10 @@ def extract_memory(messages, memory_manager):
                         )
 
                         print("A.Y.U.M.I (Jealous):", jealous_response['choices'][0]['message']['content'].strip())
-                        speak_async(jealous_response)
+                        jealous_text = jealous_response['choices'][0]['message']['content'].strip()
+                        print("[DEBUG] About to call ayumi_speak()")
+                        ayumi_speak(jealous_text)
+                        print("[DEBUG] TTS returned, about to prompt for user input...")
 
 
     except json.JSONDecodeError:
@@ -486,12 +495,6 @@ def load_last_chat_messages(filepath=CHAT_HISTORY_FILE):
 # All replaced by SQLite + GPT-based memory extraction & injection
 
 # ------------------------- End of Memory Functions -------------------------
-
-def speak_async(text):
-    try:
-        threading.Thread(target=ayumi_speak, args=(text,), daemon=True).start()
-    except Exception as e:
-        print(f"[TTS ERROR]: {e}")
 
 def initialize_character():
     profile = CHARACTER_PROFILE
@@ -555,7 +558,7 @@ def summarize_conversation(messages):
 
 def check_and_manage_tokens(messages):
     current_tokens = num_tokens_from_messages(messages, model="gpt-4o")
-    if current_tokens > 2000:
+    if current_tokens > 4000:
         print("[DEBUG] Token limit exceeded. Summarizing and pruning messages...")
         last_4 = messages[-4:] if len(messages) > 10 else messages[:]
         summary = summarize_conversation(messages)
@@ -647,7 +650,7 @@ def send_follow_up(messages, memory):
             {"role": "system", "content": initialize_character()},
             {"role": "user", "content": follow_up_prompt},
         ],
-        max_tokens=100,
+        max_tokens=250,
         temperature=0.8,
         top_p=0.9,
     )
@@ -658,14 +661,16 @@ def send_follow_up(messages, memory):
         response = openai.ChatCompletion.create(
             model="gpt-4o",
             messages=messages + [{"role": "user", "content": "Generate a new follow-up"}],
-            max_tokens=100,
+            max_tokens=250,
             temperature=0.8,
             top_p=0.9,
         )
         follow_up_response = response['choices'][0]['message']['content'].strip()
 
     print(f"A.Y.U.M.I (Follow-Up): {follow_up_response}")
-    speak_async(follow_up_response)
+    print("[DEBUG] About to call ayumi_speak()")
+    ayumi_speak(follow_up_response) 
+    print("[DEBUG] TTS returned, about to prompt for user input...")
     messages.append({"role": "assistant", "content": follow_up_response})
     last_assistant_response = follow_up_response
 
@@ -1348,7 +1353,9 @@ def main():
 
             assistant_response = response['choices'][0]['message']['content'].strip()
             print(f"A.Y.U.M.I (Guilt Trip): {assistant_response}")
-            speak_async(assistant_response)
+            print("[DEBUG] About to call ayumi_speak()")
+            ayumi_speak(assistant_response) 
+            print("[DEBUG] TTS returned, about to prompt for user input...")
             messages.append({"role": "assistant", "content": assistant_response})
         else:
             messages.append({"role": "system", "content": "User has returned. Start the conversation again."})
@@ -1361,7 +1368,9 @@ def main():
             )
             assistant_response = response['choices'][0]['message']['content'].strip()
             print(f"A.Y.U.M.I: {assistant_response}")
-            speak_async(assistant_response)
+            print("[DEBUG] About to call ayumi_speak()")
+            ayumi_speak(assistant_response) 
+            print("[DEBUG] TTS returned, about to prompt for user input...")
             messages.append({"role": "assistant", "content": assistant_response})
 
     last_assistant_response = ""
@@ -1402,7 +1411,9 @@ def main():
             if intent == "currency_conversion":
                 currency_response = process_currency_conversion(user_input)
                 print("A.Y.U.M.I:", currency_response)
-                speak_async(currency_response)
+                print("[DEBUG] About to call ayumi_speak()")
+                ayumi_speak(currency_response) 
+                print("[DEBUG] TTS returned, about to prompt for user input...")
                 messages.append({"role": "assistant", "content": currency_response})
                 continue
             
@@ -1440,7 +1451,9 @@ def main():
                         response = humanize_calendar_response("Free Time Checked", calendar_response)
 
                     print("A.Y.U.M.I:", response)
-                    speak_async(response)
+                    print("[DEBUG] About to call ayumi_speak()")
+                    ayumi_speak(response) 
+                    print("[DEBUG] TTS returned, about to prompt for user input...")
                     messages.append({"role": "assistant", "content": response})
                     continue  # Skip normal AI response
                 
@@ -1449,7 +1462,9 @@ def main():
             elif intent == "weather_check":
                 weather_response = get_weather(user_input)
                 print("A.Y.U.M.I:", weather_response)
-                speak_async(weather_response)
+                print("[DEBUG] About to call ayumi_speak()")
+                ayumi_speak(weather_response)
+                print("[DEBUG] TTS returned, about to prompt for user input...") 
                 messages.append({"role": "assistant", "content": weather_response})
                 continue
 
@@ -1480,12 +1495,15 @@ def main():
                                     {"role": "system", "content": initialize_character()},
                                     {"role": "user", "content": prompt}
                                 ],
-                                max_tokens=150,
+                                max_tokens=400,
                                 temperature=0.7
                             )['choices'][0]['message']['content'].strip()
 
                             print(f"A.Y.U.M.I: {response}")
-                            speak_async(response)
+                            assistant_response = response['choices'][0]['message']['content'].strip()
+                            print("[DEBUG] About to call ayumi_speak()")
+                            ayumi_speak(assistant_response) 
+                            print("[DEBUG] TTS returned, about to prompt for user input...")
                             messages.append({"role": "assistant", "content": response})
                             last_assistant_response = response
                             extract_memory(messages, memory_manager)
@@ -1526,7 +1544,10 @@ def main():
                             )['choices'][0]['message']['content'].strip()
 
                         print("A.Y.U.M.I:", response)
-                        speak_async(response)
+                        assistant_response = response['choices'][0]['message']['content'].strip()
+                        print("[DEBUG] About to call ayumi_speak()")
+                        ayumi_speak(assistant_response) 
+                        print("[DEBUG] TTS returned, about to prompt for user input...")
                         messages.append({"role": "assistant", "content": response})
                         continue
 
@@ -1539,12 +1560,14 @@ def main():
                         response = openai.ChatCompletion.create(
                             model="gpt-4o",
                             messages=messages,
-                            max_tokens=150,
+                            max_tokens=400,
                             temperature=0.7
                         )
                         assistant_response = response['choices'][0]['message']['content'].strip()
                         print(f"A.Y.U.M.I: {assistant_response}")
-                        speak_async(assistant_response)
+                        print("[DEBUG] About to call ayumi_speak()")
+                        ayumi_speak(assistant_response) 
+                        print("[DEBUG] TTS returned, about to prompt for user input...")
                         messages.append({"role": "assistant", "content": assistant_response})
                         last_assistant_response = assistant_response
                         extract_memory(messages, memory_manager)
@@ -1574,7 +1597,10 @@ def main():
                     )['choices'][0]['message']['content'].strip()
 
                     print("A.Y.U.M.I:", response)
-                    speak_async(response)
+                    assistant_response = response['choices'][0]['message']['content'].strip()
+                    print("[DEBUG] About to call ayumi_speak()")
+                    ayumi_speak(assistant_response) 
+                    print("[DEBUG] TTS returned, about to prompt for user input...")
                     messages.append({"role": "assistant", "content": response})
                     continue
 
@@ -1616,7 +1642,7 @@ def main():
                         prompt = (
                             "The user asked to mark a goal as done, but didn’t say which one.\n"
                             "Reply in a slightly frustrated but still affectionate yandere tone — make them feel guilty but adored, like you're trying to help but need them to be more specific."
-                        )
+                        ) 
 
                         response = openai.ChatCompletion.create(
                             model="gpt-4o",
@@ -1628,7 +1654,10 @@ def main():
                             temperature=0.85
                         )['choices'][0]['message']['content'].strip()
                     print("A.Y.U.M.I:", response)
-                    speak_async(response)
+                    assistant_response = response['choices'][0]['message']['content'].strip()
+                    print("[DEBUG] About to call ayumi_speak()")
+                    ayumi_speak(assistant_response) 
+                    print("[DEBUG] TTS returned, about to prompt for user input...")
                     messages.append({"role": "assistant", "content": response})
 
                 # === DELETE GOAL ===
@@ -1680,7 +1709,10 @@ def main():
                         )['choices'][0]['message']['content'].strip()
 
                     print("A.Y.U.M.I:", response)
-                    speak_async(response)
+                    assistant_response = response['choices'][0]['message']['content'].strip()
+                    print("[DEBUG] About to call ayumi_speak()")
+                    ayumi_speak(assistant_response) 
+                    print("[DEBUG] TTS returned, about to prompt for user input...")
                     messages.append({"role": "assistant", "content": response})
 
             else:
@@ -1700,8 +1732,11 @@ def main():
                 reminder_text = "Umm... do you still care about these things? 🥺 I feel like you’ve forgotten...\n"
                 for _, key, value in soft_reminders:
                     reminder_text += f"- {key}: {value}\n"
-                messages.append({"role": "assistant", "content": reminder_text})
                 print("A.Y.U.M.I (Soft Reminder):", reminder_text)
+                print("[DEBUG] About to call ayumi_speak()")
+                ayumi_speak(reminder_text) 
+                print("[DEBUG] TTS returned, about to prompt for user input...")
+                messages.append({"role": "assistant", "content": reminder_text})
 
 
 
@@ -1716,7 +1751,9 @@ def main():
                 )
                 assistant_response = response['choices'][0]['message']['content'].strip()
                 print(f"A.Y.U.M.I: {assistant_response}")
-                speak_async(assistant_response)
+                print("[DEBUG] About to call ayumi_speak()")
+                ayumi_speak(assistant_response)
+                print("[DEBUG] TTS returned, about to prompt for user input...")
                 messages.append({"role": "assistant", "content": assistant_response})
                 last_assistant_response = assistant_response
                 extract_memory(messages, memory_manager)
@@ -1727,12 +1764,14 @@ def main():
                 response = openai.ChatCompletion.create(
                     model="gpt-4o",
                     messages=messages,
-                    max_tokens=150,
+                    max_tokens=600,
                     temperature=0.7
                 )
                 assistant_response = response['choices'][0]['message']['content'].strip()
                 print(f"A.Y.U.M.I: {assistant_response}")
-                speak_async(assistant_response)
+                print("[DEBUG] About to call ayumi_speak()")
+                ayumi_speak(assistant_response)
+                print("[DEBUG] TTS returned, about to prompt for user input...")
                 messages.append({"role": "assistant", "content": assistant_response})
                 last_assistant_response = assistant_response
                 extract_memory(messages, memory_manager)
